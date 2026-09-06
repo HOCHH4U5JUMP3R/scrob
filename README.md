@@ -27,6 +27,7 @@ Scrob syncs your libraries from **Jellyfin**, **Plex**, **Emby**, **Nuvio**, **A
   - [Updating](#updating)
 - [Configuration](#configuration)
   - [TheTVDB metadata](#thetvdb-metadata)
+- [Home Assistant](#home-assistant)
 - [ARVIO Cloud Synchronization](#arvio-cloud-synchronization)
 - [Nuvio Cloud Synchronization](#nuvio-cloud-synchronization)
   - [Connect Nuvio](#connect-nuvio)
@@ -87,6 +88,28 @@ Scrob syncs your libraries from **Jellyfin**, **Plex**, **Emby**, **Nuvio**, **A
 - **Progressive Web App**: Install Scrob on any device - Android, iOS, or desktop - for a native app feel.
 - **Single container**: Frontend and backend ship as one image on one port. No separate services to manage.
 - **API documentation**: Full interactive OpenAPI docs at `/docs` (Swagger UI) and `/redoc` (ReDoc), useful if you're scripting against Scrob directly.
+
+## Home Assistant
+
+Use the Scrob API key from **Connections → API Key** to expose the number of rated
+movies and episodes as a Home Assistant REST sensor. The endpoint is
+`GET /api/proxy/ratings/summary` and accepts the key in the `X-Api-Key` header.
+
+```yaml
+rest:
+  - resource: http://SCROB_HOST:7330/api/proxy/ratings/summary
+    headers:
+      X-Api-Key: YOUR_SCROB_API_KEY
+    sensor:
+      - name: Scrob rated items
+        value_template: "{{ value_json.rated_items }}"
+        json_attributes:
+          - rated_movies
+          - rated_episodes
+```
+
+The response includes `rated_items` (movies plus episodes), `rated_movies`, and
+`rated_episodes`. Season and show ratings are intentionally excluded.
 
 ## Screenshots
 
