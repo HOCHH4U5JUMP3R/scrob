@@ -207,7 +207,7 @@ async def get_show_seasons(show_id: str, url: str, token: str, user_id: str) -> 
         url,
         token,
         f"Shows/{show_id}/Seasons",
-        params={"UserId": user_id, "Fields": "ParentIndexNumber,ImageTags"},
+        params={"UserId": user_id, "Fields": "IndexNumber,ParentIndexNumber,ImageTags"},
     )
     return data.get("Items", [])
 

@@ -490,9 +490,12 @@ async def sync_jellyfin_season_artwork(
     fetched = await asyncio.gather(*(fetch_seasons(source_id, tmdb_id) for source_id, tmdb_id in source_shows))
     season_artwork = {
         tmdb_id: {
-            season["ParentIndexNumber"]: f"/media/jellyfin-image/{connection.id}/{season['Id']}"
+            # A season's own number is IndexNumber. ParentIndexNumber refers
+            # to its parent in other Jellyfin item types and is absent on
+            # many season records.
+            season.get("IndexNumber", season.get("ParentIndexNumber")): f"/media/jellyfin-image/{connection.id}/{season['Id']}"
             for season in seasons
-            if season.get("Id") and isinstance(season.get("ParentIndexNumber"), int)
+            if season.get("Id") and isinstance(season.get("IndexNumber", season.get("ParentIndexNumber")), int)
         }
         for tmdb_id, seasons in fetched
         if seasons

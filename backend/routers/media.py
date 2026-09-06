@@ -5999,9 +5999,16 @@ async def refresh_artwork_from_jellyfin(
                         # show's actual seasons and works across both layouts.
                         f"{conn.url.rstrip('/')}/Shows/{item['Id']}/Seasons",
                         headers={"Authorization": f'MediaBrowser Token="{conn.token}"'},
-                        params={"UserId": conn.server_user_id, "Fields": "ParentIndexNumber,ImageTags", "Limit": 100},
+                        params={"UserId": conn.server_user_id, "Fields": "IndexNumber,ParentIndexNumber,ImageTags", "Limit": 100},
                     )
-                item = next((candidate for candidate in response.json().get("Items", []) if candidate.get("ParentIndexNumber") == season_number), None) if response.is_success else None
+                item = next(
+                    (
+                        candidate
+                        for candidate in response.json().get("Items", [])
+                        if candidate.get("IndexNumber", candidate.get("ParentIndexNumber")) == season_number
+                    ),
+                    None,
+                ) if response.is_success else None
         if item and item.get("Id"):
             poster_path = f"/media/jellyfin-image/{conn.id}/{item['Id']}"
             if season_number is None:
