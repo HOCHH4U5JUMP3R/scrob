@@ -2547,6 +2547,18 @@ async def _run_jellyfin_sync(user_id: int, job_id: int, movie_limit: int, show_l
 
                     print(f"    Mapping {len(series_tmdb_map)} shows to TMDB...")
                     show_map, show_id_to_tmdb = await sync_shows_batch(series_tmdb_map, db, api_key=tmdb_api_key)
+                    # Keep the library artwork on show cards in sync with Jellyfin,
+                    # just as we do for movies. Never replace an explicit upload.
+                    for show in shows:
+                        if show.get("Id") and (show.get("ImageTags") or {}).get("Primary"):
+                            tmdb_id = get_jellyfin_tmdb_id(show.get("ProviderIds", {}))
+                            if tmdb_id:
+                                await db.execute(
+                                    update(Show)
+                                    .where(Show.tmdb_id == tmdb_id, ~Show.poster_path.like("/media/artwork/%"))
+                                    .values(poster_path=f"/media/jellyfin-image/{conn.id}/{show['Id']}")
+                                )
+                    await db.commit()
                     unmatched_shows = [s for s in shows if str(s.get("Id")) not in show_map]
                     for s in unmatched_shows:
                         all_warnings.append({

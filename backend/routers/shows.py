@@ -1455,7 +1455,16 @@ async def get_show_season(
                 "season_number": season_number,
                 "name": tmdb_data.get("name"),
                 "overview": tmdb_data.get("overview"),
-                "poster_path": tmdb.poster_url(tmdb_data.get("poster_path")),
+                # A season can have its own Jellyfin or uploaded cover. Keep
+                # that override instead of replacing it with TMDB's season art.
+                "poster_path": next(
+                    (
+                        meta.get("poster_path")
+                        for meta in (show.tmdb_data or {}).get("seasons", [])
+                        if meta.get("season_number") == season_number and str(meta.get("poster_path", "")).startswith("/media/")
+                    ),
+                    tmdb.poster_url(tmdb_data.get("poster_path")),
+                ) if show else tmdb.poster_url(tmdb_data.get("poster_path")),
                 "backdrop_path": tmdb.poster_url(
                     tmdb_data.get("backdrop_path"), size="w1280"
                 ),
