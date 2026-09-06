@@ -18,6 +18,7 @@ from sqlalchemy.orm import joinedload
 
 from db import get_db, AsyncSessionLocal
 from models.media import Media
+from models.media_translation import MediaTranslation
 from models.collection import Collection, CollectionFile
 from models.connections import MediaServerConnection
 from models.events import WatchEvent
@@ -918,6 +919,7 @@ async def list_media(
     current_user: User = Depends(get_current_user_or_api_key),
 ):
     offset = (page - 1) * page_size
+    lang = await get_user_metadata_language(db, current_user.id)
 
     filters = [Collection.user_id == current_user.id]
     if in_list in ("in", "out"):
@@ -983,17 +985,33 @@ async def list_media(
         sort_map = {
             "rating": Media.tmdb_rating.desc().nulls_last(),
             "release_date": Media.release_date.desc().nulls_last(),
-            "title": func.lower(Media.title).asc(),
             "created_at": Collection.added_at.desc(),
         }
-        order = sort_map.get(sort, Collection.added_at.desc())
-        query = base_query.order_by(order, Media.id.desc()).offset(offset).limit(page_size)
+        if sort == "title":
+            # The stored translation is the title rendered in the collection.
+            # Join it before paginating so every page is ordered by the title
+            # the user actually sees, not by the original metadata title.
+            display_title = func.coalesce(func.nullif(MediaTranslation.title, ""), Media.title)
+            query = (
+                base_query
+                .outerjoin(
+                    MediaTranslation,
+                    and_(
+                        MediaTranslation.media_id == Media.id,
+                        MediaTranslation.language == lang,
+                    ),
+                )
+                .order_by(func.lower(display_title).asc(), Media.id.desc())
+                .offset(offset).limit(page_size)
+            )
+        else:
+            order = sort_map.get(sort, Collection.added_at.desc())
+            query = base_query.order_by(order, Media.id.desc()).offset(offset).limit(page_size)
     result = await db.execute(query)
     items = result.scalars().all()
 
     results = [format_media(m) for m in items]
     await enrich_with_state(db, current_user.id, results)
-    lang = await get_user_metadata_language(db, current_user.id)
     if lang:
         media_ids = [r["id"] for r in results if r.get("id")]
         translations = await get_media_translations(db, media_ids, lang)
