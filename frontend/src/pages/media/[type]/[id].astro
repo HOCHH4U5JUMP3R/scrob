@@ -26,7 +26,7 @@ if (!item && !error) {
 }
 
 const year = item?.release_date?.slice(0, 4) ?? null;
-const rating = item?.tmdb_rating ? item.tmdb_rating.toFixed(1) : null;
+const rating = item?.user_rating != null ? item.user_rating.toFixed(1) : null;
 const isEpisode = item?.type === "episode";
 const isMovie = item?.type === "movie";
 const collection = item?.collection;
@@ -89,9 +89,9 @@ const refreshUrl = isEpisode
       <div class="relative z-20">
         <nav class="flex items-center gap-2 text-sm text-zinc-400 mb-8 overflow-hidden whitespace-nowrap">
           {isEpisode ? (
-            <a href="/shows" class="hover:text-zinc-100 transition shrink-0">Shows</a>
+            <a href="/collection/shows" class="hover:text-zinc-100 transition shrink-0">Shows</a>
           ) : (
-            <a href="/movies" class="hover:text-zinc-100 transition shrink-0">Movies</a>
+            <a href="/collection/movies" class="hover:text-zinc-100 transition shrink-0">Movies</a>
           )}
           <span class="text-zinc-700">/</span>
           <span class="text-zinc-100 font-bold truncate">{item.title}</span>

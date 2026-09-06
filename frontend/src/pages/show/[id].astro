@@ -48,7 +48,7 @@ const seasonCount = show?.seasons_meta?.length
   : seasons.filter(([k]) => Number(k.replace("season_", "")) > 0).length;
 
 const year = show?.first_air_date?.slice(0, 4) ?? null;
-const rating = show?.tmdb_rating ? show.tmdb_rating.toFixed(1) : null;
+const rating = show?.user_rating != null ? show.user_rating.toFixed(1) : null;
 const langNames = new Intl.DisplayNames(["en"], { type: "language" });
 const originalLanguage = show?.original_language
   ? langNames.of(show.original_language) ?? show.original_language
@@ -84,7 +84,7 @@ const originalLanguage = show?.original_language
 
       <div class="relative z-20">
         <nav class="flex items-center gap-2 text-sm text-zinc-400 mb-8 overflow-hidden whitespace-nowrap">
-          <a href="/shows" class="hover:text-zinc-100 transition shrink-0">Shows</a>
+          <a href="/collection/shows" class="hover:text-zinc-100 transition shrink-0">Shows</a>
           <span class="text-zinc-700">/</span>
           <span class="text-zinc-100 font-bold truncate">{show.title}</span>
         </nav>
@@ -311,10 +311,10 @@ const originalLanguage = show?.original_language
                         <div class="flex-1 py-2">
                             <div class="flex items-start justify-between gap-4 mb-1">
                                 <h3 class="text-xl font-black text-zinc-100 group-hover/season:text-blue-400 transition-colors">{s.name || `Season ${seasonNum}`}</h3>
-                                {s.tmdb_rating != null && s.tmdb_rating > 0 && (
+                                {seasonState.user_rating != null && (
                                     <div class="bg-zinc-950 border border-zinc-800 px-2 py-1 rounded-xl flex items-center gap-1.5 shrink-0 shadow-sm">
                                         <span class="text-yellow-400 text-xs">★</span>
-                                        <span class="text-zinc-100 text-xs font-bold">{s.tmdb_rating.toFixed(1)}</span>
+                                        <span class="text-zinc-100 text-xs font-bold">{seasonState.user_rating!.toFixed(1)}</span>
                                     </div>
                                 )}
                             </div>

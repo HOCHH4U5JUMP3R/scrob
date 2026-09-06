@@ -647,7 +647,7 @@ const sonarrUrl = `${origin}/api/proxy/sonarr-compat/${list?.id}`;
         const poster = tmdbImageUrl(item.poster_path, 'w300');
         const year = item.release_date?.slice(0, 4) || '';
         const isPerson = item.type === 'person';
-        const rating = item.tmdb_rating ? Number(item.tmdb_rating).toFixed(1) : '';
+        const rating = item.user_rating != null ? Number(item.user_rating).toFixed(1) : '';
         const meta = [rating ? '★ ' + rating : '', year].filter(Boolean).join(' · ');
 
         const el = document.createElement('button');
@@ -711,7 +711,7 @@ const sonarrUrl = `${origin}/api/proxy/sonarr-compat/${list?.id}`;
 
     const poster = tmdbImageUrl(isSeason && media.show_poster_path ? media.show_poster_path : media.poster_path, 'w500');
 
-    const rating = media.tmdb_rating ? Number(media.tmdb_rating).toFixed(1) : null;
+    const rating = media.user_rating != null ? Number(media.user_rating).toFixed(1) : null;
     const year = media.release_date?.slice(0, 4) ?? '';
     const watched = media.watched ?? false;
     const inLists = media.in_lists ?? [];
@@ -868,7 +868,7 @@ const sonarrUrl = `${origin}/api/proxy/sonarr-compat/${list?.id}`;
         ...entry.media,
         poster_path: searchItem?.poster_path ?? entry.media.poster_path,
         release_date: searchItem?.release_date ?? entry.media.release_date,
-        tmdb_rating: searchItem?.tmdb_rating ?? entry.media.tmdb_rating,
+        user_rating: entry.media.user_rating ?? searchItem?.user_rating ?? null,
       };
 
       const wrapper = document.createElement('div');

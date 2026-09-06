@@ -207,7 +207,7 @@ if (token) {
 
         document.getElementById('pick-title').textContent = data.title || '';
         const year = data.release_date ? data.release_date.slice(0, 4) : '';
-        const rating = data.tmdb_rating ? '★ ' + Number(data.tmdb_rating).toFixed(1) : '';
+        const rating = data.user_rating != null ? '★ ' + Number(data.user_rating).toFixed(1) : '';
         document.getElementById('pick-meta').textContent = [year, rating].filter(Boolean).join(' · ');
         document.getElementById('pick-overview').textContent = data.overview || '';
 
