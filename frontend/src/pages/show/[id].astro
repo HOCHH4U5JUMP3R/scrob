@@ -4,7 +4,7 @@ import MediaRow from "../../components/MediaRow.astro";
 import ActionBar from "../../components/ActionBar.astro";
 import CommentsSection from "../../components/CommentsSection.astro";
 import EpisodeOrderSelector from "../../components/EpisodeOrderSelector.astro";
-import { api, type Show } from "../../lib/api";
+import { api, tmdbImageUrl, type Show } from "../../lib/api";
 import { countAiredRegularSeasons } from "../../lib/seasonCount";
 export const prerender = false;
 
@@ -96,7 +96,7 @@ const originalLanguage = show?.original_language
               {show.poster_path ? (
                 <button id="poster-zoom-btn" class="w-full h-full group/poster block cursor-zoom-in" aria-label={`Enlarge poster for ${show.title}`}>
                   <img
-                    src={show.poster_path}
+                    src={tmdbImageUrl(show.poster_path) ?? show.poster_path}
                     alt={show.title}
                     class="w-full h-full object-cover transition-transform duration-300 group-hover/poster:scale-105"
                     loading="eager"
@@ -299,7 +299,7 @@ const originalLanguage = show?.original_language
                         <div class="w-28 shrink-0">
                             <div class="aspect-[2/3] rounded-2xl overflow-hidden border border-zinc-800 shadow-lg group-hover/season:ring-2 group-hover/season:ring-blue-500/50 transition-all duration-500">
                                 {poster ? (
-                                    <img src={poster} alt={s.name} class="w-full h-full object-cover group-hover/season:scale-110 transition-transform duration-700" />
+                                    <img src={tmdbImageUrl(poster) ?? poster} alt={s.name} class="w-full h-full object-cover group-hover/season:scale-110 transition-transform duration-700" />
                                 ) : (
                                     <div class="w-full h-full bg-zinc-900 flex flex-col items-center justify-center text-zinc-500 gap-1">
                                         <span class="text-3xl">📺</span>
@@ -400,7 +400,7 @@ const originalLanguage = show?.original_language
   <div id="poster-modal" class="fixed inset-0 z-[999] flex items-center justify-center hidden" role="dialog" aria-modal="true">
     <div id="poster-modal-backdrop" class="absolute inset-0 bg-black/90 backdrop-blur-sm cursor-pointer"></div>
     <img
-      src={show.poster_path}
+      src={tmdbImageUrl(show.poster_path) ?? show.poster_path}
       alt={show.title}
       class="relative max-h-[90vh] max-w-[85vw] md:max-w-[50vw] object-contain rounded-2xl shadow-2xl ring-1 ring-white/10"
     />

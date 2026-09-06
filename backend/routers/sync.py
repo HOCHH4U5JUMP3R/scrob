@@ -2523,6 +2523,13 @@ async def _run_jellyfin_sync(user_id: int, job_id: int, movie_limit: int, show_l
                         new_watched_ids=_new_watched, new_ratings=_new_ratings, new_collected_ids=_new_collected, connection_id=conn.id,
                         seen_source_ids=_seen_collection_source_ids)
                     all_warnings.extend(w)
+                    # Prefer Jellyfin's primary artwork; the proxy keeps its token private.
+                    for item in items:
+                        if item.get("Id") and (item.get("ImageTags") or {}).get("Primary"):
+                            tmdb_id = get_jellyfin_tmdb_id(item.get("ProviderIds", {}))
+                            if tmdb_id:
+                                await db.execute(update(Media).where(Media.tmdb_id == tmdb_id, Media.media_type == MediaType.movie, ~Media.poster_path.like("/media/artwork/%")).values(poster_path=f"/media/jellyfin-image/{conn.id}/{item['Id']}"))
+                    await db.commit()
 
                 elif lib_type in ("tvshows", "tv"):
                     shows = await jellyfin.get_shows(lib_id, j_url, j_token, j_user)
@@ -2540,6 +2547,27 @@ async def _run_jellyfin_sync(user_id: int, job_id: int, movie_limit: int, show_l
 
                     print(f"    Mapping {len(series_tmdb_map)} shows to TMDB...")
                     show_map, show_id_to_tmdb = await sync_shows_batch(series_tmdb_map, db, api_key=tmdb_api_key)
+                    # Prefer Jellyfin artwork for shows and their seasons.  The
+                    # URLs are served through the authenticated image proxy.
+                    for jellyfin_show in shows:
+                        show_id = show_map.get(str(jellyfin_show.get("Id")))
+                        if not show_id:
+                            continue
+                        show = await db.get(Show, show_id)
+                        if not show:
+                            continue
+                        if (jellyfin_show.get("ImageTags") or {}).get("Primary") and not (show.poster_path or "").startswith("/media/artwork/"):
+                            show.poster_path = f"/media/jellyfin-image/{conn.id}/{jellyfin_show['Id']}"
+                        seasons = await jellyfin.get_seasons(jellyfin_show["Id"], j_url, j_token, j_user)
+                        seasons_meta = list((show.tmdb_data or {}).get("seasons") or [])
+                        season_by_number = {entry.get("season_number"): entry for entry in seasons_meta}
+                        for season in seasons:
+                            number = season.get("IndexNumber")
+                            if number in season_by_number and (season.get("ImageTags") or {}).get("Primary"):
+                                season_by_number[number]["poster_path"] = f"/media/jellyfin-image/{conn.id}/{season['Id']}"
+                        if seasons_meta:
+                            show.tmdb_data = {**(show.tmdb_data or {}), "seasons": seasons_meta}
+                    await db.commit()
                     unmatched_shows = [s for s in shows if str(s.get("Id")) not in show_map]
                     for s in unmatched_shows:
                         all_warnings.append({

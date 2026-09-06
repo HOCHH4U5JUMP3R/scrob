@@ -1509,6 +1509,7 @@ export const api = {
 // synthetic "tvdb" size bucket.
 export function tmdbImageUrl(path: string | null | undefined, size: string = "w500"): string | null {
   if (!path) return null;
+  if (path.startsWith("/media/")) return `/api/proxy${path}`;
   if (path.startsWith("http://") || path.startsWith("https://")) {
     const tmdb = /image\.tmdb\.org\/t\/p\/([^/]+)(\/.+)$/.exec(path);
     if (tmdb) return `/api/proxy/media/image/${tmdb[1]}${tmdb[2]}`;

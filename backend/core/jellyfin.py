@@ -158,7 +158,7 @@ async def get_movies(library_id: str, url: str, token: str, user_id: str) -> lis
             "ParentId": library_id,
             "IncludeItemTypes": "Movie",
             "Recursive": True,
-            "Fields": "ProviderIds,MediaStreams,Overview,Genres,CommunityRating,OfficialRating,RunTimeTicks,PremiereDate,UserData,DateCreated",
+            "Fields": "ProviderIds,MediaStreams,Overview,Genres,CommunityRating,OfficialRating,RunTimeTicks,PremiereDate,UserData,DateCreated,ImageTags",
             "Limit": page_size,
             "StartIndex": start,
         })
@@ -182,7 +182,7 @@ async def get_shows(library_id: str, url: str, token: str, user_id: str) -> list
             "ParentId": library_id,
             "IncludeItemTypes": "Series",
             "Recursive": True,
-            "Fields": "ProviderIds",
+            "Fields": "ProviderIds,ImageTags",
             "Limit": page_size,
             "StartIndex": start,
         })
@@ -211,7 +211,7 @@ async def get_episodes(library_id: str, url: str, token: str, user_id: str) -> l
             # never be imported into a user's collection.
             "ExcludeLocationTypes": "Virtual",
             "IsMissing": False,
-            "Fields": "ProviderIds,MediaStreams,Overview,Genres,CommunityRating,RunTimeTicks,PremiereDate,UserData,DateCreated",
+            "Fields": "ProviderIds,MediaStreams,Overview,Genres,CommunityRating,RunTimeTicks,PremiereDate,UserData,DateCreated,ImageTags",
             "Limit": page_size,
             "StartIndex": start,
         })
@@ -224,6 +224,17 @@ async def get_episodes(library_id: str, url: str, token: str, user_id: str) -> l
             break
 
     return all_items
+
+async def get_seasons(series_id: str, url: str, token: str, user_id: str) -> list:
+    """Return season records including Jellyfin's primary artwork tags."""
+    data = await _get(url, token, f"Users/{user_id}/Items", params={
+        "ParentId": series_id,
+        "IncludeItemTypes": "Season",
+        "Fields": "ImageTags,IndexNumber",
+        "Limit": 100,
+    })
+    return data.get("Items", [])
+
 
 def extract_quality(media_streams: list) -> dict:
     quality = {
@@ -290,7 +301,7 @@ async def _scan_for_tmdb_match(url: str, token: str, item_type: str, tmdb_id: in
         data = await _get(url, token, "Items", params={
             "Recursive": True,
             "IncludeItemTypes": item_type,
-            "Fields": "ProviderIds",
+            "Fields": "ProviderIds,ImageTags",
             "Limit": page_size,
             "StartIndex": start,
         })
@@ -412,7 +423,7 @@ async def build_tmdb_index(url: str, token: str, item_type: str) -> Dict[int, st
         data = await _get(url, token, "Items", params={
             "Recursive": True,
             "IncludeItemTypes": item_type,
-            "Fields": "ProviderIds",
+            "Fields": "ProviderIds,ImageTags",
             "Limit": page_size,
             "StartIndex": start,
         })
