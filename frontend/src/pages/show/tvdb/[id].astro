@@ -100,6 +100,15 @@ const originalLanguage = show?.original_language
                 </div>
               )}
             </div>
+            {user && show.in_library && show.tmdb_id && (
+              <div class="mt-3 space-y-2">
+                <button id="jellyfin-artwork-refresh" type="button" data-tmdb-id={show.tmdb_id} class="w-full rounded-lg border border-cyan-700/70 px-3 py-2 text-xs font-medium text-cyan-300 hover:bg-cyan-950/40">Cover von Jellyfin neu laden</button>
+                <label class="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-zinc-700 px-3 py-2 text-xs font-medium text-zinc-300 hover:bg-zinc-800">
+                  Eigenes Cover hochladen
+                  <input id="artwork-upload" type="file" accept="image/jpeg,image/png,image/webp" class="sr-only" data-tmdb-id={show.tmdb_id} />
+                </label>
+              </div>
+            )}
           </div>
 
           <!-- Info -->
@@ -422,6 +431,33 @@ const originalLanguage = show?.original_language
     closeBtn?.addEventListener('click', closeModal);
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
   }
+</script>
+
+<script>
+  const artworkInput = document.getElementById("artwork-upload") as HTMLInputElement | null;
+  artworkInput?.addEventListener("change", async () => {
+    const file = artworkInput.files?.[0];
+    if (!file) return;
+    const form = new FormData(); form.append("file", file);
+    const response = await fetch(`/api/proxy/media/artwork/series/${artworkInput.dataset.tmdbId}`, { method: "POST", body: form });
+    if (!response.ok) { alert("Cover konnte nicht hochgeladen werden."); return; }
+    window.location.reload();
+  });
+
+  const jellyfinArtworkRefresh = document.getElementById("jellyfin-artwork-refresh") as HTMLButtonElement | null;
+  jellyfinArtworkRefresh?.addEventListener("click", async () => {
+    jellyfinArtworkRefresh.disabled = true;
+    jellyfinArtworkRefresh.textContent = "Lade Cover von Jellyfin…";
+    try {
+      const response = await fetch(`/api/proxy/media/artwork/series/${jellyfinArtworkRefresh.dataset.tmdbId}/refresh-jellyfin`, { method: "POST" });
+      if (response.ok) { window.location.reload(); return; }
+      const result = await response.json().catch(() => ({}));
+      jellyfinArtworkRefresh.textContent = result.detail || "Jellyfin-Cover nicht gefunden";
+    } catch {
+      jellyfinArtworkRefresh.textContent = "Jellyfin-Cover konnte nicht geladen werden";
+    }
+    jellyfinArtworkRefresh.disabled = false;
+  });
 </script>
 
 <script define:vars={{ tvdbId: id, token: Astro.locals.token, hasLocalShow: !!show?.id }}>

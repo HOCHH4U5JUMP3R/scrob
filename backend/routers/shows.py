@@ -60,6 +60,28 @@ from core.translations import (
 router = APIRouter()
 
 
+def _apply_local_artwork_overrides(show: ShowModel | None, show_data: dict) -> None:
+    """Keep locally selected series and season posters in TVDB views."""
+    if not show:
+        return
+
+    if str(show.poster_path or "").startswith("/media/"):
+        show_data["poster_path"] = show.poster_path
+
+    season_posters = {
+        season.get("season_number"): season.get("poster_path")
+        for season in (show.tmdb_data or {}).get("seasons", [])
+        if isinstance(season, dict)
+        and isinstance(season.get("season_number"), int)
+        and str(season.get("poster_path") or "").startswith("/media/")
+    }
+    if season_posters:
+        show_data["seasons"] = [
+            {**season, "poster_path": season_posters.get(season.get("season_number"), season.get("poster_path"))}
+            for season in show_data.get("seasons", [])
+        ]
+
+
 async def get_user_tvdb_key(db: AsyncSession, user_id: int) -> str | None:
     """Resolve the effective TVDB key (personal override, else server-wide) and
     register its subscriber PIN with the TVDB client so every downstream request
@@ -2020,6 +2042,7 @@ async def get_tvdb_show(
         tmdb_api_key=tmdb_api_key,
         metadata_language=metadata_lang,
     )
+    _apply_local_artwork_overrides(show, show_data)
     mapping_by_tmdb = {
         (mapping.tmdb_season_number, mapping.tmdb_episode_number): mapping
         for mapping in mappings
@@ -2376,6 +2399,11 @@ async def get_tvdb_season(
         season_meta if season["season_number"] == season_number else season
         for season in show_data["seasons"]
     ]
+    _apply_local_artwork_overrides(show, show_data)
+    season_meta = next(
+        (season for season in show_data["seasons"] if season["season_number"] == season_number),
+        season_meta,
+    )
     mapping_by_tvdb_id = {mapping.tvdb_id: mapping for mapping in mappings}
     mapping_by_position = {
         (mapping.tvdb_season_number, mapping.tvdb_episode_number): mapping
