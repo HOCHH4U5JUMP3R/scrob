@@ -5502,7 +5502,7 @@ async def get_media_details(
             "title": data.get("title") or data.get("name"),
             "original_title": data.get("original_title") or data.get("original_name"),
             "overview": data.get("overview") or (media.overview if media else None),
-            "poster_path": tmdb.poster_url(data.get("poster_path")),
+            "poster_path": media.poster_path if media and media.poster_path else tmdb.poster_url(data.get("poster_path")),
             "backdrop_path": tmdb.poster_url(
                 data.get("backdrop_path"), size="original"
             ),
