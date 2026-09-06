@@ -4,7 +4,7 @@ import ActionBar from "../../../components/ActionBar.astro";
 import CommentsSection from "../../../components/CommentsSection.astro";
 import EpisodeOrderSelector from "../../../components/EpisodeOrderSelector.astro";
 import TvdbAttribution from "../../../components/TvdbAttribution.astro";
-import { api, type TvdbShow } from "../../../lib/api";
+import { api, tmdbImageUrl, type TvdbShow } from "../../../lib/api";
 import { formatSeasonTitle } from "../../../lib/media-format";
 import { countAiredRegularSeasons } from "../../../lib/seasonCount";
 export const prerender = false;
@@ -38,6 +38,8 @@ const langNames = new Intl.DisplayNames(["en"], { type: "language" });
 const originalLanguage = show?.original_language
   ? langNames.of(show.original_language) ?? show.original_language
   : null;
+const posterSrc = tmdbImageUrl(show?.poster_path);
+const backdropSrc = tmdbImageUrl(show?.backdrop_path, "w1280");
 ---
 
 <Base title={show?.title || "Show Details"}>
@@ -58,7 +60,7 @@ const originalLanguage = show?.original_language
         <div class="absolute -top-8 left-1/2 -translate-x-1/2 w-screen h-[600px] overflow-hidden">
           <div class="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/40 to-transparent z-10"></div>
           <img
-            src={show.backdrop_path}
+            src={backdropSrc ?? show.backdrop_path}
             alt=""
             class="w-full h-full object-cover opacity-50 blur-[1px]"
             loading="eager"
@@ -81,7 +83,7 @@ const originalLanguage = show?.original_language
               {show.poster_path ? (
                 <button id="poster-zoom-btn" class="w-full h-full group/poster block cursor-zoom-in" aria-label={`Enlarge poster for ${show.title}`}>
                   <img
-                    src={show.poster_path}
+                    src={posterSrc ?? show.poster_path}
                     alt={show.title}
                     class="w-full h-full object-cover transition-transform duration-300 group-hover/poster:scale-105"
                     loading="eager"
@@ -100,6 +102,15 @@ const originalLanguage = show?.original_language
                 </div>
               )}
             </div>
+            {user && show.in_library && show.tmdb_id && (
+              <div class="mt-3 space-y-2">
+                <button id="jellyfin-artwork-refresh" type="button" data-tmdb-id={show.tmdb_id} class="w-full rounded-lg border border-cyan-700/70 px-3 py-2 text-xs font-medium text-cyan-300 hover:bg-cyan-950/40">Cover von Jellyfin neu laden</button>
+                <label class="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-zinc-700 px-3 py-2 text-xs font-medium text-zinc-300 hover:bg-zinc-800">
+                  Eigenes Cover hochladen
+                  <input id="artwork-upload" type="file" accept="image/jpeg,image/png,image/webp" class="sr-only" data-tmdb-id={show.tmdb_id} />
+                </label>
+              </div>
+            )}
           </div>
 
           <!-- Info -->
@@ -274,7 +285,7 @@ const originalLanguage = show?.original_language
                     <div class="w-28 shrink-0">
                       <div class="aspect-[2/3] rounded-2xl overflow-hidden border border-zinc-800 shadow-lg group-hover/season:ring-2 group-hover/season:ring-blue-500/50 transition-all duration-500">
                         {poster ? (
-                          <img src={poster} alt={seasonTitle} class="w-full h-full object-cover group-hover/season:scale-110 transition-transform duration-700" />
+                          <img src={tmdbImageUrl(poster) ?? poster} alt={seasonTitle} class="w-full h-full object-cover group-hover/season:scale-110 transition-transform duration-700" />
                         ) : (
                           <div class="w-full h-full bg-zinc-900 flex flex-col items-center justify-center text-zinc-500 gap-1">
                             <span class="text-3xl">📺</span>
@@ -393,7 +404,7 @@ const originalLanguage = show?.original_language
   <div id="poster-modal" class="fixed inset-0 z-[999] flex items-center justify-center hidden" role="dialog" aria-modal="true">
     <div id="poster-modal-backdrop" class="absolute inset-0 bg-black/90 backdrop-blur-sm cursor-pointer"></div>
     <img
-      src={show.poster_path}
+      src={posterSrc ?? show.poster_path}
       alt={show.title}
       class="relative max-h-[90vh] max-w-[85vw] md:max-w-[50vw] object-contain rounded-2xl shadow-2xl ring-1 ring-white/10"
     />
@@ -422,6 +433,33 @@ const originalLanguage = show?.original_language
     closeBtn?.addEventListener('click', closeModal);
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
   }
+</script>
+
+<script>
+  const artworkInput = document.getElementById("artwork-upload") as HTMLInputElement | null;
+  artworkInput?.addEventListener("change", async () => {
+    const file = artworkInput.files?.[0];
+    if (!file) return;
+    const form = new FormData(); form.append("file", file);
+    const response = await fetch(`/api/proxy/media/artwork/series/${artworkInput.dataset.tmdbId}`, { method: "POST", body: form });
+    if (!response.ok) { alert("Cover konnte nicht hochgeladen werden."); return; }
+    window.location.reload();
+  });
+
+  const jellyfinArtworkRefresh = document.getElementById("jellyfin-artwork-refresh") as HTMLButtonElement | null;
+  jellyfinArtworkRefresh?.addEventListener("click", async () => {
+    jellyfinArtworkRefresh.disabled = true;
+    jellyfinArtworkRefresh.textContent = "Lade Cover von Jellyfin…";
+    try {
+      const response = await fetch(`/api/proxy/media/artwork/series/${jellyfinArtworkRefresh.dataset.tmdbId}/refresh-jellyfin`, { method: "POST" });
+      if (response.ok) { window.location.reload(); return; }
+      const result = await response.json().catch(() => ({}));
+      jellyfinArtworkRefresh.textContent = result.detail || "Jellyfin-Cover nicht gefunden";
+    } catch {
+      jellyfinArtworkRefresh.textContent = "Jellyfin-Cover konnte nicht geladen werden";
+    }
+    jellyfinArtworkRefresh.disabled = false;
+  });
 </script>
 
 <script define:vars={{ tvdbId: id, token: Astro.locals.token, hasLocalShow: !!show?.id }}>
