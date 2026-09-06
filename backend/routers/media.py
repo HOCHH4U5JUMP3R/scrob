@@ -8,7 +8,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 from pydantic import BaseModel
-from fastapi import APIRouter, Depends, Query, HTTPException, Request
+from fastapi import APIRouter, Depends, Query, HTTPException, Request, UploadFile, File
 from fastapi.responses import StreamingResponse, Response
 from starlette.background import BackgroundTask
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -5502,7 +5502,7 @@ async def get_media_details(
             "title": data.get("title") or data.get("name"),
             "original_title": data.get("original_title") or data.get("original_name"),
             "overview": data.get("overview") or (media.overview if media else None),
-            "poster_path": tmdb.poster_url(data.get("poster_path")),
+            "poster_path": media.poster_path if media and media.poster_path else tmdb.poster_url(data.get("poster_path")),
             "backdrop_path": tmdb.poster_url(
                 data.get("backdrop_path"), size="original"
             ),
@@ -5907,6 +5907,93 @@ async def verify_image_token(request: Request, db: AsyncSession = Depends(get_db
         return user_id
     except (JWTError, ValueError):
         raise credentials_exception
+
+
+@router.get("/jellyfin-image/{connection_id}/{item_id}")
+async def jellyfin_image(connection_id: int, item_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    conn = (await db.execute(select(MediaServerConnection).where(MediaServerConnection.id == connection_id, MediaServerConnection.user_id == current_user.id, MediaServerConnection.type == "jellyfin"))).scalar_one_or_none()
+    if not conn:
+        raise HTTPException(404, "Jellyfin connection not found")
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+        response = await client.get(f"{conn.url.rstrip('/')}/Items/{item_id}/Images/Primary", headers={"Authorization": f'MediaBrowser Token="{conn.token}"'})
+    if response.status_code >= 400:
+        raise HTTPException(502, "Jellyfin image not available")
+    return Response(content=response.content, media_type=response.headers.get("content-type", "image/jpeg"), headers={"Cache-Control": "private, max-age=3600"})
+
+
+@router.post("/artwork/{media_type}/{tmdb_id}/refresh-jellyfin")
+async def refresh_artwork_from_jellyfin(
+    media_type: str,
+    tmdb_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Replace the current poster with Jellyfin's current primary image."""
+    if media_type not in {"movie", "series"}:
+        raise HTTPException(400, "Artwork can only be refreshed for movies or series")
+
+    target = (
+        (await db.execute(select(Media).where(Media.tmdb_id == tmdb_id, Media.media_type == MediaType.movie))).scalar_one_or_none()
+        if media_type == "movie"
+        else (await db.execute(select(ShowModel).where(ShowModel.tmdb_id == tmdb_id))).scalar_one_or_none()
+    )
+    if not target:
+        raise HTTPException(404, "Media not found")
+
+    connections = (await db.execute(select(MediaServerConnection).where(
+        MediaServerConnection.user_id == current_user.id,
+        MediaServerConnection.type == "jellyfin",
+    ))).scalars().all()
+    from core import jellyfin as jellyfin_core
+    for conn in connections:
+        if media_type == "movie":
+            item = await jellyfin_core.find_movie_by_tmdb_id(conn.url, conn.token, tmdb_id, user_id=conn.server_user_id)
+        else:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+                response = await client.get(
+                    f"{conn.url.rstrip('/')}/Items",
+                    headers={"Authorization": f'MediaBrowser Token="{conn.token}"'},
+                    params={"Recursive": "true", "IncludeItemTypes": "Series", "AnyProviderIdEquals": f"Tmdb.{tmdb_id}", "Fields": "ProviderIds", "Limit": 100},
+                )
+            item = next((candidate for candidate in response.json().get("Items", []) if jellyfin_core.get_jellyfin_tmdb_id(candidate.get("ProviderIds", {})) == tmdb_id), None) if response.is_success else None
+        if item and item.get("Id"):
+            target.poster_path = f"/media/jellyfin-image/{conn.id}/{item['Id']}"
+            await db.commit()
+            return {"poster_path": target.poster_path}
+    raise HTTPException(404, "No matching item with a Jellyfin cover image was found")
+
+
+@router.post("/artwork/{media_type}/{tmdb_id}")
+async def upload_artwork(media_type: str, tmdb_id: int, file: UploadFile = File(...), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Upload a JPEG, PNG, or WebP poster override for a movie or series."""
+    if media_type not in {"movie", "series"} or file.content_type not in {"image/jpeg", "image/png", "image/webp"}:
+        raise HTTPException(400, "Upload a JPEG, PNG, or WebP image for a movie or series")
+    data = await file.read()
+    if not data or len(data) > 10 * 1024 * 1024:
+        raise HTTPException(400, "Image must be between 1 byte and 10 MB")
+    import imghdr
+    ext = imghdr.what(None, data)
+    if ext not in {"jpeg", "png", "webp"}:
+        raise HTTPException(400, "The uploaded file is not a supported image")
+    artwork_dir = settings.data_dir / "artwork"
+    artwork_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{media_type}-{tmdb_id}-{uuid.uuid4().hex}.{ 'jpg' if ext == 'jpeg' else ext}"
+    (artwork_dir / filename).write_bytes(data)
+    entity = (await db.execute(select(Media).where(Media.tmdb_id == tmdb_id, Media.media_type == MediaType.movie))).scalar_one_or_none() if media_type == "movie" else (await db.execute(select(ShowModel).where(ShowModel.tmdb_id == tmdb_id))).scalar_one_or_none()
+    if not entity:
+        (artwork_dir / filename).unlink(missing_ok=True)
+        raise HTTPException(404, "Media not found")
+    entity.poster_path = f"/media/artwork/{filename}"
+    await db.commit()
+    return {"poster_path": entity.poster_path}
+
+
+@router.get("/artwork/{filename}")
+async def serve_artwork(filename: str, current_user: User = Depends(get_current_user)):
+    path = settings.data_dir / "artwork" / filename
+    if "/" in filename or not path.is_file():
+        raise HTTPException(404, "Not found")
+    return FileResponse(path, headers={"Cache-Control": "private, max-age=3600"})
 
 
 @router.get("/image/{size}/{path:path}")
