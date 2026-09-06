@@ -10,6 +10,7 @@ from sqlalchemy.dialects import postgresql
 
 from models.base import MediaType
 from routers import media, shows
+from core.translations import apply_media_translations
 
 
 class _Scalars:
@@ -75,6 +76,39 @@ class LocalizedTitleSortTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("LEFT OUTER JOIN show_translations", sql)
         self.assertIn("show_translations.language = %(language_1)s", sql)
         self.assertIn("coalesce(nullif(show_translations.title", sql)
+
+
+class PosterSelectionTests(unittest.TestCase):
+    def test_translation_does_not_replace_local_jellyfin_artwork(self):
+        items = [{"id": 1, "poster_path": "/media/jellyfin-image/4/abc"}]
+
+        apply_media_translations(items, {1: {"poster_path": "/tmdb-poster.jpg"}})
+
+        self.assertEqual(items[0]["poster_path"], "/media/jellyfin-image/4/abc")
+
+    def test_local_artwork_is_preferred_over_remote_poster(self):
+        self.assertEqual(
+            media.preferred_poster_path([
+                "https://image.tmdb.org/t/p/w500/remote.jpg",
+                "/media/jellyfin-image/4/abc",
+            ]),
+            "/media/jellyfin-image/4/abc",
+        )
+
+    def test_uploaded_artwork_is_preferred_over_jellyfin_artwork(self):
+        self.assertEqual(
+            media.preferred_poster_path([
+                "/media/jellyfin-image/4/abc",
+                "/media/artwork/movie-123-cover.jpg",
+            ]),
+            "/media/artwork/movie-123-cover.jpg",
+        )
+
+    def test_first_available_poster_is_used_without_local_artwork(self):
+        self.assertEqual(
+            media.preferred_poster_path([None, "https://image.tmdb.org/t/p/w500/remote.jpg"]),
+            "https://image.tmdb.org/t/p/w500/remote.jpg",
+        )
 
 
 if __name__ == "__main__":
