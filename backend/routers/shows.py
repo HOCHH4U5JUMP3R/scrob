@@ -14,6 +14,7 @@ from models.lists import List as UserList, ListItem
 
 from db import get_db, engine
 from models.media import Media
+from models.show_translation import ShowTranslation
 from models.collection import Collection, CollectionFile
 from models.base import CollectionSource, MediaType
 from models.show import Show as ShowModel
@@ -222,6 +223,7 @@ async def list_shows(
     in_list: str | None = Query(None),
 ):
     offset = (page - 1) * page_size
+    lang = await get_user_metadata_language(db, current_user.id)
 
     # A show is in the user's collection when either the series itself is
     # collected (cloud/watchlist providers) or at least one countable episode
@@ -313,9 +315,9 @@ async def list_shows(
 
     # Sort and Paginate
     if sort == "rating":
-        q = base_query.order_by(ShowModel.tmdb_rating.desc().nulls_last())
+        q = base_query.order_by(ShowModel.tmdb_rating.desc().nulls_last(), ShowModel.id.desc())
     elif sort == "release_date":
-        q = base_query.order_by(ShowModel.first_air_date.desc().nulls_last())
+        q = base_query.order_by(ShowModel.first_air_date.desc().nulls_last(), ShowModel.id.desc())
     elif sort == "created_at":
         added_at_sq = (
             select(Media.show_id.label("show_id"), Collection.added_at.label("added_at"))
@@ -349,7 +351,7 @@ async def list_shows(
         q = (
             base_query
             .outerjoin(show_added_at_sq, show_added_at_sq.c.show_id == ShowModel.id)
-            .order_by(show_added_at_sq.c.max_added_at.desc().nulls_last())
+            .order_by(show_added_at_sq.c.max_added_at.desc().nulls_last(), ShowModel.id.desc())
         )
     elif sort == "last_watched":
         last_watched_sq = (
@@ -362,15 +364,27 @@ async def list_shows(
         q = (
             base_query
             .outerjoin(last_watched_sq, last_watched_sq.c.show_id == ShowModel.id)
-            .order_by(last_watched_sq.c.last_watched_at.desc().nulls_last())
+            .order_by(last_watched_sq.c.last_watched_at.desc().nulls_last(), ShowModel.id.desc())
         )
     else:
-        q = base_query.order_by(func.lower(ShowModel.title).asc())
+        # Titles are translated after querying. Use that same translation for
+        # the database sort so title pagination matches the rendered order.
+        display_title = func.coalesce(func.nullif(ShowTranslation.title, ""), ShowModel.title)
+        q = (
+            base_query
+            .outerjoin(
+                ShowTranslation,
+                and_(
+                    ShowTranslation.show_id == ShowModel.id,
+                    ShowTranslation.language == lang,
+                ),
+            )
+            .order_by(func.lower(display_title).asc(), ShowModel.id.desc())
+        )
 
     result = await db.execute(q.limit(page_size).offset(offset))
     results = [format_show(s) for s in result.scalars().all()]
     await enrich_with_state(db, current_user.id, results)
-    lang = await get_user_metadata_language(db, current_user.id)
     if lang:
         show_ids = [r["id"] for r in results if r.get("id")]
         translations = await get_show_translations(db, show_ids, lang)
