@@ -26,7 +26,7 @@ if (!episode && !error) {
 }
 
 const show = episode?.show;
-const rating = episode?.tmdb_rating ? episode.tmdb_rating.toFixed(1) : null;
+const rating = episode?.user_rating != null ? episode.user_rating.toFixed(1) : null;
 const thumbnail = episode?.still_path || show?.poster_path || null;
 ---
 
@@ -54,7 +54,7 @@ const thumbnail = episode?.still_path || show?.poster_path || null;
       <div class="relative z-20">
         <!-- Breadcrumb -->
         <nav class="flex items-center gap-2 text-sm text-zinc-400 mb-8 overflow-hidden whitespace-nowrap">
-          <a href="/shows" class="hover:text-zinc-100 transition shrink-0">Shows</a>
+          <a href="/collection/shows" class="hover:text-zinc-100 transition shrink-0">Shows</a>
           <span class="text-zinc-700">/</span>
           <a href={`/show/${id}`} class="hover:text-zinc-100 transition truncate">{show?.title}</a>
           <span class="text-zinc-700 shrink-0">/</span>

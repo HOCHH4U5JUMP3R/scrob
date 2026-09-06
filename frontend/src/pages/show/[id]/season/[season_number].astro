@@ -48,7 +48,7 @@ const show = season?.show;
 
       <div class="relative z-20">
         <nav class="flex items-center gap-2 text-sm text-zinc-400 mb-8 overflow-hidden whitespace-nowrap">
-          <a href="/shows" class="hover:text-zinc-100 transition">Shows</a>
+          <a href="/collection/shows" class="hover:text-zinc-100 transition">Shows</a>
           <span class="text-zinc-700">/</span>
           <a href={`/show/${id}`} class="hover:text-zinc-100 transition truncate">{show?.title}</a>
           <span class="text-zinc-700">/</span>
@@ -125,9 +125,9 @@ const show = season?.show;
             
             <div class="flex flex-wrap justify-center md:justify-start items-center gap-4 text-zinc-400 text-sm mb-8 bg-zinc-900/40 p-3 rounded-xl border border-zinc-800/50 backdrop-blur-sm inline-flex">
               <span class="font-bold text-zinc-300">{season.episodes?.length || 0} Episodes</span>
-              {season.tmdb_rating != null && season.tmdb_rating > 0 && (
+              {season.season_user_rating != null && (
                 <span class="flex items-center gap-1.5 text-yellow-400 font-black">
-                  <span class="text-base leading-none">★</span> {season.tmdb_rating.toFixed(1)}
+                  <span class="text-base leading-none">★</span> {season.season_user_rating!.toFixed(1)}
                 </span>
               )}
               {season.air_date && (
@@ -231,10 +231,10 @@ const show = season?.show;
                         )}
                       </div>
 
-                      {ep.tmdb_rating > 0 && (
+                      {ep.user_rating != null && (
                         <div class="bg-zinc-950 border border-zinc-800 px-2 py-1 rounded-xl flex items-center gap-1.5 shrink-0 shadow-sm">
                           <span class="text-yellow-400 text-xs">★</span>
-                          <span class="text-zinc-100 text-xs font-bold">{ep.tmdb_rating.toFixed(1)}</span>
+                          <span class="text-zinc-100 text-xs font-bold">{ep.user_rating!.toFixed(1)}</span>
                         </div>
                       )}
                     </div>
