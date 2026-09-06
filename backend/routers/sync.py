@@ -460,6 +460,65 @@ async def sync_shows_batch(
     return show_map, show_id_to_tmdb
 
 
+async def sync_jellyfin_season_artwork(
+    shows: list[dict],
+    connection: MediaServerConnection,
+    db: AsyncSession,
+) -> None:
+    """Store Jellyfin season covers without replacing uploaded artwork."""
+    source_shows = [
+        (show["Id"], get_jellyfin_tmdb_id(show.get("ProviderIds", {})))
+        for show in shows
+        if show.get("Id") and get_jellyfin_tmdb_id(show.get("ProviderIds", {}))
+    ]
+    if not source_shows:
+        return
+
+    semaphore = asyncio.Semaphore(10)
+
+    async def fetch_seasons(source_id: str, tmdb_id: int) -> tuple[int, list[dict]]:
+        async with semaphore:
+            try:
+                seasons = await jellyfin.get_show_seasons(
+                    source_id, connection.url, connection.token, connection.server_user_id,
+                )
+                return tmdb_id, seasons
+            except Exception as exc:
+                logger.warning("Could not fetch Jellyfin seasons for TMDB %s: %s", tmdb_id, exc)
+                return tmdb_id, []
+
+    fetched = await asyncio.gather(*(fetch_seasons(source_id, tmdb_id) for source_id, tmdb_id in source_shows))
+    season_artwork = {
+        tmdb_id: {
+            season["ParentIndexNumber"]: f"/media/jellyfin-image/{connection.id}/{season['Id']}"
+            for season in seasons
+            if season.get("Id") and isinstance(season.get("ParentIndexNumber"), int)
+        }
+        for tmdb_id, seasons in fetched
+        if seasons
+    }
+    if not season_artwork:
+        return
+
+    result = await db.execute(select(Show).where(Show.tmdb_id.in_(season_artwork)))
+    for show in result.scalars().all():
+        data = dict(show.tmdb_data or {})
+        seasons = [dict(season) for season in data.get("seasons", [])]
+        by_number = {season.get("season_number"): season for season in seasons}
+        for season_number, poster_path in season_artwork[show.tmdb_id].items():
+            season = by_number.get(season_number)
+            if season is None:
+                season = {"season_number": season_number}
+                seasons.append(season)
+                by_number[season_number] = season
+            if not str(season.get("poster_path") or "").startswith("/media/artwork/"):
+                season["poster_path"] = poster_path
+        data["seasons"] = seasons
+        show.tmdb_data = data
+        flag_modified(show, "tmdb_data")
+    await db.commit()
+
+
 async def batch_enrich_items(
     db: AsyncSession,
     items: list[tuple],  # (Media, series_tmdb_id | None)
@@ -2590,6 +2649,7 @@ async def _run_jellyfin_sync(user_id: int, job_id: int, movie_limit: int, show_l
                                     .values(poster_path=f"/media/jellyfin-image/{conn.id}/{show['Id']}")
                                 )
                     await db.commit()
+                    await sync_jellyfin_season_artwork(shows, conn, db)
                     unmatched_shows = [s for s in shows if str(s.get("Id")) not in show_map]
                     for s in unmatched_shows:
                         all_warnings.append({

@@ -904,6 +904,21 @@ def format_media(media: Media) -> dict:
     }
 
 
+def preferred_poster_path(paths: list[str | None]) -> str | None:
+    """Return the artwork users explicitly selected ahead of remote metadata.
+
+    A movie can have multiple local Media rows when it was imported from more
+    than one service. Detail pages already combine those rows, so collection
+    cards must use the same cover-selection rule rather than accidentally
+    rendering the TMDB poster from a different row.
+    """
+    for prefix in ("/media/artwork/", "/media/jellyfin-image/"):
+        selected = next((path for path in paths if path and path.startswith(prefix)), None)
+        if selected:
+            return selected
+    return next((path for path in paths if path), None)
+
+
 @router.get("")
 async def list_media(
     type: MediaType | None = Query(None),
@@ -1011,6 +1026,23 @@ async def list_media(
     items = result.scalars().all()
 
     results = [format_media(m) for m in items]
+    # A movie can appear in a user's collection through multiple sources. Use
+    # the same locally selected cover for every card as the detail endpoint.
+    tmdb_ids = {item.tmdb_id for item in items if item.tmdb_id is not None}
+    if tmdb_ids:
+        poster_result = await db.execute(
+            select(Media.tmdb_id, Media.poster_path).where(
+                Media.media_type == type,
+                Media.tmdb_id.in_(tmdb_ids),
+            )
+        )
+        posters_by_tmdb: dict[int, list[str | None]] = {}
+        for media_tmdb_id, poster_path in poster_result.all():
+            posters_by_tmdb.setdefault(media_tmdb_id, []).append(poster_path)
+        for item in results:
+            preferred_poster = preferred_poster_path(posters_by_tmdb.get(item["tmdb_id"], []))
+            if preferred_poster:
+                item["poster_path"] = preferred_poster
     await enrich_with_state(db, current_user.id, results)
     if lang:
         media_ids = [r["id"] for r in results if r.get("id")]
@@ -5384,6 +5416,7 @@ async def get_media_details(
         result = await db.execute(query)
         all_media = result.scalars().all()
         media = all_media[0] if all_media else None
+        local_poster_path = preferred_poster_path([m.poster_path for m in all_media])
         all_media_ids = [m.id for m in all_media]
 
         local_info = {"in_library": False, "playable": False, "library": None, "id": None}
@@ -5502,7 +5535,7 @@ async def get_media_details(
             "title": data.get("title") or data.get("name"),
             "original_title": data.get("original_title") or data.get("original_name"),
             "overview": data.get("overview") or (media.overview if media else None),
-            "poster_path": media.poster_path if media and media.poster_path else tmdb.poster_url(data.get("poster_path")),
+            "poster_path": local_poster_path or tmdb.poster_url(data.get("poster_path")),
             "backdrop_path": tmdb.poster_url(
                 data.get("backdrop_path"), size="original"
             ),
