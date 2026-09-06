@@ -421,7 +421,6 @@ const discoverBackdropUrl = discoverPick?.backdrop_path
           const posterUrl = tmdbImageUrl(raw, 'w500');
           const typeLabel = isSeries ? 'Show' : 'Movie';
           const watched = item.watched ?? false;
-          const inLists = item.in_lists ?? [];
           const inLibrary = item.in_library ?? false;
           const collectionPct = item.collection_pct ?? (inLibrary ? 100 : 0);
           const watchPct = item.watch_pct ?? (watched ? 100 : 0);
@@ -459,13 +458,12 @@ const discoverBackdropUrl = discoverPick?.backdrop_path
                 </svg>
                 <span class="text-[8px] font-bold uppercase tracking-wider leading-none">${isSeries ? `${watchPct}%` : 'Watched'}</span>
               </button>
-              <button data-action="list" data-in-lists="${esc(JSON.stringify(inLists))}" data-state="${inLists.length > 0 ? 'active' : 'inactive'}" title="Add to list"
-                class="flex flex-col items-center justify-center gap-1 py-2.5 transition-all cursor-pointer border-r border-zinc-800/60 hover:brightness-125 ${inLists.length > 0 ? 'bg-sky-500/20 text-sky-400' : 'bg-zinc-900 text-zinc-400 hover:bg-sky-500/10 hover:text-sky-400'}">
-                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
-                  <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+              <button data-action="rate" data-user-rating="${rating ?? ''}" data-state="${rating ? 'active' : 'inactive'}" title="${rating ? `Your rating: ${rating}/10` : 'Rate this'}"
+                class="flex flex-col items-center justify-center gap-1 py-2.5 transition-all cursor-pointer border-r border-zinc-800/60 hover:brightness-125 ${rating ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/40' : 'bg-zinc-900 text-zinc-400 hover:bg-amber-500/10 hover:text-amber-400'}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="${rating ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
                 </svg>
-                <span class="text-[8px] font-bold uppercase tracking-wider leading-none">Lists</span>
+                <span class="text-[8px] font-bold uppercase tracking-wider leading-none">${rating ?? 'Rate'}</span>
               </button>
               <button data-action="collected" data-in-library="${inLibrary}" data-collection-pct="${collectionPct}" data-state="${(inLibrary || collectionPct > 0) ? 'active' : 'inactive'}"
                 title="${isSeries ? `${collectionPct}% in library` : (inLibrary ? 'In collection' : 'Add to collection')}"

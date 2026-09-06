@@ -1,14 +1,14 @@
 ---
 interface Props {
   watched: boolean;
-  inLists: number[];
+  userRating: number | null | undefined;
   inLibrary: boolean;
   collectionPct: number;
   watchPct: number;
   isSeries: boolean;
 }
 
-const { watched, inLists, inLibrary, collectionPct, watchPct, isSeries } = Astro.props;
+const { watched, userRating, inLibrary, collectionPct, watchPct, isSeries } = Astro.props;
 
 const watchActive = isSeries ? watchPct > 0 : watched;
 const collectActive = isSeries ? collectionPct > 0 : inLibrary;
@@ -31,23 +31,18 @@ const collectActive = isSeries ? collectionPct > 0 : inLibrary;
     <span class="text-[8px] font-bold uppercase tracking-wider leading-none">{isSeries ? `${watchPct}%` : 'Watched'}</span>
   </button>
 
-  <!-- Lists (sky) -->
+  <!-- Rate (amber) -->
   <button
-    data-action="list"
-    data-in-lists={JSON.stringify(inLists)}
-    data-state={inLists.length > 0 ? 'active' : 'inactive'}
-    title="Add to list"
-    class={`flex flex-col items-center justify-center gap-1 py-2.5 transition-all cursor-pointer border-r border-zinc-800/60 hover:brightness-125 ${inLists.length > 0 ? 'bg-sky-500/20 text-sky-400' : 'bg-zinc-900 text-zinc-400 hover:bg-sky-500/10 hover:text-sky-400'}`}
+    data-action="rate"
+    data-user-rating={userRating != null ? String(userRating) : ""}
+    data-state={userRating != null ? 'active' : 'inactive'}
+    title={userRating != null ? `Your rating: ${userRating.toFixed(1)}/10` : "Rate this"}
+    class={`flex flex-col items-center justify-center gap-1 py-2.5 transition-all cursor-pointer border-r border-zinc-800/60 hover:brightness-125 ${userRating != null ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/40' : 'bg-zinc-900 text-zinc-400 hover:bg-amber-500/10 hover:text-amber-400'}`}
   >
-    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <line x1="8" y1="6" x2="21" y2="6"/>
-      <line x1="8" y1="12" x2="21" y2="12"/>
-      <line x1="8" y1="18" x2="21" y2="18"/>
-      <line x1="3" y1="6" x2="3.01" y2="6"/>
-      <line x1="3" y1="12" x2="3.01" y2="12"/>
-      <line x1="3" y1="18" x2="3.01" y2="18"/>
+    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill={userRating != null ? "currentColor" : "none"} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
     </svg>
-    <span class="text-[8px] font-bold uppercase tracking-wider leading-none">Lists</span>
+    <span class="text-[8px] font-bold uppercase tracking-wider leading-none">{userRating != null ? userRating.toFixed(1) : "Rate"}</span>
   </button>
 
   <!-- Collected (purple) -->

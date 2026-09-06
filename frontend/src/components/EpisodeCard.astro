@@ -31,7 +31,6 @@ const rawImage = isSeries
 const imageUrl = tmdbImageUrl(rawImage, "w780");
 
 const watched = item.watched ?? false;
-const inLists = item.in_lists ?? [];
 const inLibrary = item.in_library ?? false;
 const collectionPct = item.collection_pct ?? (inLibrary ? 100 : 0);
 ---
@@ -45,6 +44,10 @@ const collectionPct = item.collection_pct ?? (inLibrary ? 100 : 0);
   data-show-tvdb-id={item.show_tvdb_id ? String(item.show_tvdb_id) : ""}
   data-season={item.season_number != null ? String(item.season_number) : ""}
   data-episode-number={item.episode_number != null ? String(item.episode_number) : ""}
+  data-rate-title={item.title}
+  data-rate-subtitle={item.show_title ?? ""}
+  data-rate-poster={rawImage ?? ""}
+  data-rate-landscape="true"
 >
   {href ? (
     <a href={href} class="block">
@@ -123,7 +126,7 @@ const collectionPct = item.collection_pct ?? (inLibrary ? 100 : 0);
   <!-- Action bar (below image, above info) -->
   <CardActionBar
     watched={watched}
-    inLists={inLists}
+    userRating={item.user_rating}
     inLibrary={inLibrary}
     collectionPct={collectionPct}
     watchPct={watched ? 100 : 0}
