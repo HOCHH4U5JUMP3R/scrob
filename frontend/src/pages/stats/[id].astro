@@ -700,13 +700,28 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
     const section = document.getElementById('top-stats');
     if (!section) return;
     const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    // Local artwork paths require Astro's proxy just like the detail and
+    // collection cards do. This covers both uploaded artwork and Jellyfin
+    // covers, whose /media URLs must not be requested from the frontend app.
+    const posterUrl = (path) => {
+      if (!path) return null;
+      if (path.startsWith('/media/')) return `/api/proxy${path}`;
+      if (path.startsWith('http://') || path.startsWith('https://')) {
+        const tmdb = /image\.tmdb\.org\/t\/p\/([^/]+)(\/.+)$/.exec(path);
+        if (tmdb) return `/api/proxy/media/image/${tmdb[1]}${tmdb[2]}`;
+        const tvdb = /artworks\.thetvdb\.com(\/.+)$/.exec(path);
+        if (tvdb) return `/api/proxy/media/image/tvdb${tvdb[1]}`;
+        return path;
+      }
+      return `/api/proxy/media/image/w500${path.startsWith('/') ? path : '/' + path}`;
+    };
     const fmtH = (min) => { const h = Math.floor(min / 60); const m = min % 60; return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`; };
     const card = (id, has) => { const el = document.getElementById(id + '-card'); if (el) el.style.display = has ? '' : 'none'; return has; };
 
     const posters = (items) => (items || []).filter(it => it.title).map(it => `
       <a href="${it.episodes != null ? '/show/' + it.tmdb_id : '/media/movie/' + it.tmdb_id}" class="group block">
         <div class="aspect-[2/3] rounded-xl overflow-hidden bg-zinc-800">
-          ${it.poster_path ? `<img src="${esc(it.poster_path)}" alt="${esc(it.title)}" loading="lazy" class="w-full h-full object-cover group-hover:scale-105 transition-transform">` : ''}
+          ${posterUrl(it.poster_path) ? `<img src="${esc(posterUrl(it.poster_path))}" alt="${esc(it.title)}" loading="lazy" class="w-full h-full object-cover group-hover:scale-105 transition-transform">` : ''}
         </div>
         <div class="text-xs text-zinc-300 font-semibold mt-1.5 truncate">${esc(it.title)}</div>
         <div class="text-[11px] text-zinc-500">${it.plays} play${it.plays === 1 ? '' : 's'} · ${fmtH(it.minutes || 0)}</div>
