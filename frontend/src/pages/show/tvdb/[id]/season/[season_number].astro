@@ -3,7 +3,7 @@ import Base from "../../../../../layouts/Base.astro";
 import ActionBar from "../../../../../components/ActionBar.astro";
 import CommentsSection from "../../../../../components/CommentsSection.astro";
 import TvdbAttribution from "../../../../../components/TvdbAttribution.astro";
-import { api, type TvdbSeason } from "../../../../../lib/api";
+import { api, tmdbImageUrl, type TvdbSeason } from "../../../../../lib/api";
 import { formatSeasonTitle } from "../../../../../lib/media-format";
 export const prerender = false;
 
@@ -28,6 +28,8 @@ const show = season?.show;
 const seasonTitle = season
   ? formatSeasonTitle(Number(season_number), season.name)
   : "Season Details";
+const posterSrc = tmdbImageUrl(season?.poster_path || show?.poster_path);
+const backdropSrc = tmdbImageUrl(season?.backdrop_path || show?.backdrop_path, "w1280");
 ---
 
 <Base title={season ? `${show?.title} - ${seasonTitle}` : "Season Details"}>
@@ -47,7 +49,7 @@ const seasonTitle = season
       {(season.backdrop_path || show?.backdrop_path) && (
         <div class="absolute -top-8 left-1/2 -translate-x-1/2 w-screen h-[500px] overflow-hidden">
           <div class="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/80 to-transparent z-10"></div>
-          <img src={season.backdrop_path || show?.backdrop_path} alt="" class="w-full h-full object-cover opacity-30 blur-[1px]" />
+          <img src={backdropSrc ?? season.backdrop_path ?? show?.backdrop_path} alt="" class="w-full h-full object-cover opacity-30 blur-[1px]" />
         </div>
       )}
 
@@ -65,7 +67,7 @@ const seasonTitle = season
             <div class="aspect-[2/3] rounded-2xl overflow-hidden shadow-2xl border border-zinc-800 bg-zinc-900 ring-1 ring-white/10 relative">
               {(season.poster_path || show?.poster_path) ? (
                 <button id="poster-zoom-btn" class="w-full h-full group/poster block cursor-zoom-in" aria-label={`Enlarge poster for ${seasonTitle}`}>
-                  <img src={season.poster_path ?? show?.poster_path ?? ""} alt={seasonTitle} class="w-full h-full object-cover transition-transform duration-300 group-hover/poster:scale-105" />
+                  <img src={posterSrc ?? season.poster_path ?? show?.poster_path ?? ""} alt={seasonTitle} class="w-full h-full object-cover transition-transform duration-300 group-hover/poster:scale-105" />
                   <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover/poster:opacity-100 transition-opacity duration-200 bg-black/30">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-8 h-8 text-white drop-shadow-lg">
                       <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607ZM10.5 7.5v6m3-3h-6" />
@@ -306,7 +308,7 @@ const seasonTitle = season
   <div id="poster-modal" class="fixed inset-0 z-[999] flex items-center justify-center hidden" role="dialog" aria-modal="true">
     <div id="poster-modal-backdrop" class="absolute inset-0 bg-black/90 backdrop-blur-sm cursor-pointer"></div>
     <img
-      src={season?.poster_path ?? show?.poster_path ?? ""}
+      src={posterSrc ?? season?.poster_path ?? show?.poster_path ?? ""}
       alt={season?.name ?? ""}
       class="relative max-h-[90vh] max-w-[85vw] md:max-w-[50vw] object-contain rounded-2xl shadow-2xl ring-1 ring-white/10"
     />
