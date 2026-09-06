@@ -158,7 +158,10 @@ def apply_media_translations(items: list[dict], translations: dict[int, dict]) -
             item["overview"] = t["overview"]
         if t.get("tagline"):
             item["tagline"] = t["tagline"]
-        if t.get("poster_path"):
+        # Library artwork (uploaded or from Jellyfin) is deliberately stored
+        # on the media row. A translated TMDB poster must not replace it in
+        # collection views after the media row has been formatted.
+        if t.get("poster_path") and not (item.get("poster_path") or "").startswith("/media/"):
             item["poster_path"] = _translated_poster(t["poster_path"])
     return items
 
@@ -175,6 +178,8 @@ def apply_show_translations(items: list[dict], translations: dict[int, dict]) ->
             item["overview"] = t["overview"]
         if t.get("tagline"):
             item["tagline"] = t["tagline"]
-        if t.get("poster_path"):
+        # Keep an explicitly selected local cover when localized metadata is
+        # applied to a show card.
+        if t.get("poster_path") and not (item.get("poster_path") or "").startswith("/media/"):
             item["poster_path"] = _translated_poster(t["poster_path"])
     return items
