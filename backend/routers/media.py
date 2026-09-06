@@ -5925,11 +5925,12 @@ async def jellyfin_image(connection_id: int, item_id: str, db: AsyncSession = De
 async def refresh_artwork_from_jellyfin(
     media_type: str,
     tmdb_id: int,
+    season_number: int | None = Query(None, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Replace the current poster with Jellyfin's current primary image."""
-    if media_type not in {"movie", "series"}:
+    if media_type not in {"movie", "series"} or (season_number is not None and media_type != "series"):
         raise HTTPException(400, "Artwork can only be refreshed for movies or series")
 
     target = (
@@ -5956,17 +5957,40 @@ async def refresh_artwork_from_jellyfin(
                     params={"Recursive": "true", "IncludeItemTypes": "Series", "AnyProviderIdEquals": f"Tmdb.{tmdb_id}", "Fields": "ProviderIds", "Limit": 100},
                 )
             item = next((candidate for candidate in response.json().get("Items", []) if jellyfin_core.get_jellyfin_tmdb_id(candidate.get("ProviderIds", {})) == tmdb_id), None) if response.is_success else None
+            if item and season_number is not None:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+                    response = await client.get(
+                        # Jellyfin's season rows are not reliably children of
+                        # the Series in /Items (their ParentId can be the
+                        # library folder). This dedicated endpoint returns the
+                        # show's actual seasons and works across both layouts.
+                        f"{conn.url.rstrip('/')}/Shows/{item['Id']}/Seasons",
+                        headers={"Authorization": f'MediaBrowser Token="{conn.token}"'},
+                        params={"UserId": conn.server_user_id, "Fields": "ParentIndexNumber,ImageTags", "Limit": 100},
+                    )
+                item = next((candidate for candidate in response.json().get("Items", []) if candidate.get("ParentIndexNumber") == season_number), None) if response.is_success else None
         if item and item.get("Id"):
-            target.poster_path = f"/media/jellyfin-image/{conn.id}/{item['Id']}"
+            poster_path = f"/media/jellyfin-image/{conn.id}/{item['Id']}"
+            if season_number is None:
+                target.poster_path = poster_path
+            else:
+                data = dict(target.tmdb_data or {})
+                seasons = [dict(season) for season in data.get("seasons", [])]
+                season = next((season for season in seasons if season.get("season_number") == season_number), {"season_number": season_number})
+                if season not in seasons:
+                    seasons.append(season)
+                season["poster_path"] = poster_path
+                data["seasons"] = seasons
+                target.tmdb_data = data
             await db.commit()
-            return {"poster_path": target.poster_path}
+            return {"poster_path": poster_path}
     raise HTTPException(404, "No matching item with a Jellyfin cover image was found")
 
 
 @router.post("/artwork/{media_type}/{tmdb_id}")
-async def upload_artwork(media_type: str, tmdb_id: int, file: UploadFile = File(...), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def upload_artwork(media_type: str, tmdb_id: int, season_number: int | None = Query(None, ge=0), file: UploadFile = File(...), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Upload a JPEG, PNG, or WebP poster override for a movie or series."""
-    if media_type not in {"movie", "series"} or file.content_type not in {"image/jpeg", "image/png", "image/webp"}:
+    if media_type not in {"movie", "series"} or (season_number is not None and media_type != "series") or file.content_type not in {"image/jpeg", "image/png", "image/webp"}:
         raise HTTPException(400, "Upload a JPEG, PNG, or WebP image for a movie or series")
     data = await file.read()
     if not data or len(data) > 10 * 1024 * 1024:
@@ -5977,15 +6001,26 @@ async def upload_artwork(media_type: str, tmdb_id: int, file: UploadFile = File(
         raise HTTPException(400, "The uploaded file is not a supported image")
     artwork_dir = settings.data_dir / "artwork"
     artwork_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"{media_type}-{tmdb_id}-{uuid.uuid4().hex}.{ 'jpg' if ext == 'jpeg' else ext}"
+    filename = f"{media_type}-{tmdb_id}{f'-season-{season_number}' if season_number is not None else ''}-{uuid.uuid4().hex}.{ 'jpg' if ext == 'jpeg' else ext}"
     (artwork_dir / filename).write_bytes(data)
     entity = (await db.execute(select(Media).where(Media.tmdb_id == tmdb_id, Media.media_type == MediaType.movie))).scalar_one_or_none() if media_type == "movie" else (await db.execute(select(ShowModel).where(ShowModel.tmdb_id == tmdb_id))).scalar_one_or_none()
     if not entity:
         (artwork_dir / filename).unlink(missing_ok=True)
         raise HTTPException(404, "Media not found")
-    entity.poster_path = f"/media/artwork/{filename}"
+    poster_path = f"/media/artwork/{filename}"
+    if season_number is None:
+        entity.poster_path = poster_path
+    else:
+        data = dict(entity.tmdb_data or {})
+        seasons = [dict(season) for season in data.get("seasons", [])]
+        season = next((season for season in seasons if season.get("season_number") == season_number), {"season_number": season_number})
+        if season not in seasons:
+            seasons.append(season)
+        season["poster_path"] = poster_path
+        data["seasons"] = seasons
+        entity.tmdb_data = data
     await db.commit()
-    return {"poster_path": entity.poster_path}
+    return {"poster_path": poster_path}
 
 
 @router.get("/artwork/{filename}")
