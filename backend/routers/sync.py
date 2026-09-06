@@ -328,6 +328,93 @@ def extract_jellyfin_quality(item: dict) -> dict:
     return quality
 
 
+def _jellyfin_date(value: str | None) -> str | None:
+    """Convert Jellyfin's ISO timestamp/date to the date format stored by Scrob."""
+    return value[:10] if value else None
+
+
+def apply_jellyfin_media_metadata(media: Media, item: dict) -> None:
+    """Make Jellyfin the authoritative metadata source for a library item.
+
+    Provider ids are still retained for matching and outbound integrations, but
+    TMDB/TVDB must not overwrite details the user curated in Jellyfin.
+    """
+    media.title = item.get("Name") or media.title
+    media.original_title = item.get("OriginalTitle") or media.original_title
+    media.overview = item.get("Overview") or media.overview
+    media.release_date = _jellyfin_date(item.get("PremiereDate")) or media.release_date
+    media.tmdb_rating = item.get("CommunityRating") if item.get("CommunityRating") is not None else media.tmdb_rating
+    ticks = item.get("RunTimeTicks")
+    if ticks is not None:
+        media.runtime = round(ticks / 600_000_000)
+    media.tmdb_data = {
+        **(media.tmdb_data or {}),
+        "source": "jellyfin",
+        "genres": item.get("Genres") or [],
+        "official_rating": item.get("OfficialRating"),
+        "taglines": item.get("Taglines") or [],
+        "provider_ids": item.get("ProviderIds") or {},
+        "people": [
+            {"name": person.get("Name"), "character": person.get("Role") or ""}
+            for person in item.get("People", []) if person.get("Name")
+        ],
+    }
+
+
+def apply_jellyfin_show_metadata(show: Show, item: dict) -> None:
+    show.title = item.get("Name") or show.title
+    show.original_title = item.get("OriginalTitle") or show.original_title
+    show.overview = item.get("Overview") or show.overview
+    show.first_air_date = _jellyfin_date(item.get("PremiereDate")) or show.first_air_date
+    show.status = item.get("Status") or show.status
+    show.tmdb_rating = item.get("CommunityRating") if item.get("CommunityRating") is not None else show.tmdb_rating
+    show.tagline = (item.get("Taglines") or [None])[0] or show.tagline
+    show.tmdb_data = {
+        **(show.tmdb_data or {}),
+        "source": "jellyfin",
+        "genres": item.get("Genres") or [],
+        "official_rating": item.get("OfficialRating"),
+        "provider_ids": item.get("ProviderIds") or {},
+        "people": [
+            {"name": person.get("Name"), "character": person.get("Role") or ""}
+            for person in item.get("People", []) if person.get("Name")
+        ],
+    }
+
+
+async def sync_jellyfin_shows(shows: list[dict], db: AsyncSession, connection_id: int) -> tuple[dict[str, int], dict[int, int]]:
+    """Upsert Jellyfin series by Jellyfin identity, using TMDB only as an id fallback."""
+    show_map: dict[str, int] = {}
+    show_id_to_tmdb: dict[int, int] = {}
+    for item in shows:
+        raw_source_id = item.get("Id")
+        if not raw_source_id:
+            continue
+        source_id = str(raw_source_id)
+        result = await db.execute(select(Show).where(
+            Show.jellyfin_connection_id == connection_id,
+            Show.jellyfin_source_id == source_id,
+        ))
+        show = result.scalar_one_or_none()
+        tmdb_id = get_jellyfin_tmdb_id(item.get("ProviderIds", {}))
+        if show is None and tmdb_id is not None:
+            result = await db.execute(select(Show).where(Show.tmdb_id == tmdb_id))
+            show = result.scalar_one_or_none()
+        if show is None:
+            show = Show(tmdb_id=tmdb_id, title=item.get("Name") or "Untitled Series")
+            db.add(show)
+        elif show.tmdb_id is None and tmdb_id is not None:
+            show.tmdb_id = tmdb_id
+        show.jellyfin_connection_id = connection_id
+        show.jellyfin_source_id = source_id
+        apply_jellyfin_show_metadata(show, item)
+        await db.flush()
+        show_map[source_id] = show.id
+        if show.tmdb_id is not None:
+            show_id_to_tmdb[show.id] = show.tmdb_id
+    return show_map, show_id_to_tmdb
+
+
 async def sync_shows_batch(
     series_tmdb_map: dict,  # source_series_id → tmdb_id
     db: AsyncSession,
@@ -2031,12 +2118,15 @@ async def sync_items(
                     stats["skipped"] += 1
                     media_id_for_watch = existing_media_id
 
+                    if source is CollectionSource.jellyfin:
+                        apply_jellyfin_media_metadata(existing_media_obj, item)
+
                     # Heal missing TMDB ID for movies
                     if media_type == MediaType.movie and existing_media_obj.tmdb_id is None and tmdb_id is not None:
                         existing_media_obj = await apply_media_change_safely(
                             db, existing_media_obj, lambda m=existing_media_obj: setattr(m, "tmdb_id", tmdb_id)
                         )
-                        if not any(m is existing_media_obj for m, _ in new_media_for_enrichment):
+                        if source is not CollectionSource.jellyfin and not any(m is existing_media_obj for m, _ in new_media_for_enrichment):
                             new_media_for_enrichment.append((existing_media_obj, None))
 
                     # Heal unenriched episodes: webhook may have created a Media row
@@ -2057,7 +2147,7 @@ async def sync_items(
                                         existing_media_obj.season_number = season_num
                                     if existing_media_obj.episode_number is None and episode_num is not None:
                                         existing_media_obj.episode_number = episode_num
-                                    if not any(m is existing_media_obj for m, _ in new_media_for_enrichment):
+                                    if source is not CollectionSource.jellyfin and not any(m is existing_media_obj for m, _ in new_media_for_enrichment):
                                         new_media_for_enrichment.append((existing_media_obj, ep_series_tmdb_id))
                         else:
                             # Heal missing show_title tag on existing stub episodes (synced before
@@ -2204,6 +2294,9 @@ async def sync_items(
                             )
                             new_media = media  # Cache updated after savepoint commits below
 
+                            if source is CollectionSource.jellyfin:
+                                apply_jellyfin_media_metadata(media, item)
+
                             # Tag stub episodes so the match-unmatched-show endpoint can find them
                             if can_store_stub and not show_id and media.tmdb_data is None and media_type == MediaType.episode:
                                 media.tmdb_data = {
@@ -2212,7 +2305,7 @@ async def sync_items(
                                 }
 
                             ep_series_tmdb_id = show_id_to_tmdb.get(show_id) if show_id else None
-                            if tmdb_id or ep_series_tmdb_id:
+                            if source is not CollectionSource.jellyfin and (tmdb_id or ep_series_tmdb_id):
                                 new_media_for_enrichment.append((media, ep_series_tmdb_id))
 
                         if sync_collection:
@@ -2438,8 +2531,8 @@ async def _run_jellyfin_sync(user_id: int, job_id: int, movie_limit: int, show_l
             conn_result = await db.execute(conn_q)
             conn = conn_result.scalar_one_or_none()
 
-            if not conn or not tmdb_api_key:
-                err = "Missing Jellyfin connection or TMDB API key"
+            if not conn:
+                err = "Missing Jellyfin connection"
                 await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(status=SyncStatus.failed, error_message=err))
                 await db.commit()
                 return
@@ -2482,7 +2575,7 @@ async def _run_jellyfin_sync(user_id: int, job_id: int, movie_limit: int, show_l
                         if not get_jellyfin_tmdb_id(m.get("ProviderIds", {}))
                         and (m.get("ProviderIds", {}).get("Imdb") or m.get("Name"))
                     ]
-                    if movies_without_tmdb:
+                    if movies_without_tmdb and tmdb_api_key:
                         print(f"    Resolving {len(movies_without_tmdb)} movies via IMDb/title fallback...")
                         semaphore = asyncio.Semaphore(TMDB_CONCURRENCY)
 
@@ -2529,17 +2622,12 @@ async def _run_jellyfin_sync(user_id: int, job_id: int, movie_limit: int, show_l
                     if show_limit:
                         shows = shows[:show_limit]
 
-                    series_tmdb_map = {
-                        s.get("Id"): get_jellyfin_tmdb_id(s.get("ProviderIds", {}))
-                        for s in shows if get_jellyfin_tmdb_id(s.get("ProviderIds", {}))
-                    }
-
-                    total_discovered += len(series_tmdb_map)
+                    total_discovered += len(shows)
                     await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(total_items=total_discovered, current_step="Pulling shows"))
                     await db.commit()
 
-                    print(f"    Mapping {len(series_tmdb_map)} shows to TMDB...")
-                    show_map, show_id_to_tmdb = await sync_shows_batch(series_tmdb_map, db, api_key=tmdb_api_key)
+                    print(f"    Syncing {len(shows)} show metadata from Jellyfin...")
+                    show_map, show_id_to_tmdb = await sync_jellyfin_shows(shows, db, conn.id)
                     unmatched_shows = [s for s in shows if str(s.get("Id")) not in show_map]
                     for s in unmatched_shows:
                         all_warnings.append({
@@ -2554,7 +2642,7 @@ async def _run_jellyfin_sync(user_id: int, job_id: int, movie_limit: int, show_l
                     unmatched_series_ids = {str(s.get("Id")) for s in shows if str(s.get("Id")) not in show_map}
                     unmatched_series_episodes = [e for e in items if str(e.get("SeriesId")) in unmatched_series_ids]
 
-                    total_discovered = total_discovered - len(series_tmdb_map) + len(filtered_episodes) + len(unmatched_series_episodes)
+                    total_discovered = total_discovered - len(shows) + len(filtered_episodes) + len(unmatched_series_episodes)
                     await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(total_items=total_discovered, current_step="Pulling episodes"))
                     await db.commit()
 
@@ -2579,14 +2667,8 @@ async def _run_jellyfin_sync(user_id: int, job_id: int, movie_limit: int, show_l
                         )
                         all_warnings.extend(w)
 
-            if conn.sync_collection and not movie_limit and not show_limit:
-                removed_media_ids = await _remove_stale_collection_files(
-                    db, user_id, CollectionSource.jellyfin, conn.id, _seen_collection_source_ids,
-                )
-                if removed_media_ids:
-                    stats["removed"] = len(removed_media_ids)
-                    await db.commit()
-                    print(f"Jellyfin sync job {job_id}: removed {len(removed_media_ids)} item(s) no longer in Jellyfin.")
+            # Scrob is a long-term archive: deleting a file in Jellyfin must
+            # never delete its Collection/CollectionFile record or watch data.
 
             print(f"Jellyfin sync job {job_id} completed. Stats: {stats}")
             # A pull only populates scrob's own data — it never automatically pushes to
