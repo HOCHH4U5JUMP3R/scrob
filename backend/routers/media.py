@@ -5921,6 +5921,46 @@ async def jellyfin_image(connection_id: int, item_id: str, db: AsyncSession = De
     return Response(content=response.content, media_type=response.headers.get("content-type", "image/jpeg"), headers={"Cache-Control": "private, max-age=3600"})
 
 
+@router.post("/artwork/{media_type}/{tmdb_id}/refresh-jellyfin")
+async def refresh_artwork_from_jellyfin(
+    media_type: str,
+    tmdb_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Replace the current poster with the primary image currently in Jellyfin."""
+    if media_type not in {"movie", "series"}:
+        raise HTTPException(400, "Artwork can only be refreshed for movies or series")
+
+    if media_type == "movie":
+        target = (await db.execute(select(Media).where(Media.tmdb_id == tmdb_id, Media.media_type == MediaType.movie))).scalar_one_or_none()
+        file_query = select(CollectionFile, MediaServerConnection).join(Collection).join(MediaServerConnection).where(
+            Collection.user_id == current_user.id, Collection.media_id == Media.id,
+            Media.tmdb_id == tmdb_id, Media.media_type == MediaType.movie,
+            CollectionFile.source == CollectionSource.jellyfin,
+        )
+    else:
+        target = (await db.execute(select(ShowModel).where(ShowModel.tmdb_id == tmdb_id))).scalar_one_or_none()
+        file_query = select(CollectionFile, MediaServerConnection).join(Collection).join(Media).join(MediaServerConnection).where(
+            Collection.user_id == current_user.id, Media.show_id == ShowModel.id,
+            ShowModel.tmdb_id == tmdb_id, CollectionFile.source == CollectionSource.jellyfin,
+        )
+    if not target:
+        raise HTTPException(404, "Media not found")
+
+    from core import jellyfin as jellyfin_core
+    for collection_file, conn in (await db.execute(file_query)).all():
+        if not collection_file.source_id:
+            continue
+        item = await jellyfin_core.get_item(conn.url, conn.token, collection_file.source_id, user_id=conn.server_user_id)
+        image_item_id = item.get("SeriesId") if media_type == "series" and item else (item or {}).get("Id")
+        if image_item_id:
+            target.poster_path = f"/media/jellyfin-image/{conn.id}/{image_item_id}"
+            await db.commit()
+            return {"poster_path": target.poster_path}
+    raise HTTPException(404, "No Jellyfin cover image found for this item")
+
+
 @router.post("/artwork/{media_type}/{tmdb_id}")
 async def upload_artwork(media_type: str, tmdb_id: int, file: UploadFile = File(...), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Upload a JPEG, PNG, or WebP poster override for a movie or series."""
