@@ -350,6 +350,22 @@ async def sync_shows_batch(
         for s in shows_loaded:
             existing_shows[s.tmdb_id] = s
 
+    # The bulk TMDB upsert below refreshes active shows. Keep explicit uploads
+    # (including per-season uploads) while refreshing the remaining metadata.
+    artwork_overrides: dict[int, tuple[str | None, dict[int, str]]] = {}
+    for tmdb_id, show in existing_shows.items():
+        season_overrides = {
+            season["season_number"]: season["poster_path"]
+            for season in (show.tmdb_data or {}).get("seasons", [])
+            if isinstance(season, dict)
+            and isinstance(season.get("season_number"), int)
+            and isinstance(season.get("poster_path"), str)
+            and season["poster_path"].startswith("/media/artwork/")
+        }
+        poster_override = show.poster_path if (show.poster_path or "").startswith("/media/artwork/") else None
+        if poster_override or season_overrides:
+            artwork_overrides[tmdb_id] = (poster_override, season_overrides)
+
     missing = [tid for tid in all_tmdb_ids if tid not in existing_shows]
 
     # Also re-fetch active shows so new seasons added to TMDB appear without a manual refresh.
@@ -420,6 +436,17 @@ async def sync_shows_batch(
             stmt = stmt.returning(Show)
             res = await db.execute(stmt)
             for s in res.scalars().all():
+                poster_override, season_overrides = artwork_overrides.get(s.tmdb_id, (None, {}))
+                if poster_override:
+                    s.poster_path = poster_override
+                if season_overrides:
+                    data = dict(s.tmdb_data or {})
+                    seasons = [dict(season) for season in data.get("seasons", [])]
+                    for season in seasons:
+                        if season.get("season_number") in season_overrides:
+                            season["poster_path"] = season_overrides[season["season_number"]]
+                    data["seasons"] = seasons
+                    s.tmdb_data = data
                 existing_shows[s.tmdb_id] = s
 
     show_map: dict[str, int] = {}
@@ -2525,7 +2552,11 @@ async def _run_jellyfin_sync(user_id: int, job_id: int, movie_limit: int, show_l
                     all_warnings.extend(w)
                     # Prefer Jellyfin's primary artwork; the proxy keeps its token private.
                     for item in items:
-                        if item.get("Id") and (item.get("ImageTags") or {}).get("Primary"):
+                        # Some Jellyfin versions omit ImageTags from a library
+                        # listing even though /Images/Primary is available. The
+                        # proxy is the authority here, so don't silently fall
+                        # back to TMDB just because that optional field is absent.
+                        if item.get("Id"):
                             tmdb_id = get_jellyfin_tmdb_id(item.get("ProviderIds", {}))
                             if tmdb_id:
                                 await db.execute(update(Media).where(Media.tmdb_id == tmdb_id, Media.media_type == MediaType.movie, ~Media.poster_path.like("/media/artwork/%")).values(poster_path=f"/media/jellyfin-image/{conn.id}/{item['Id']}"))
@@ -2550,7 +2581,7 @@ async def _run_jellyfin_sync(user_id: int, job_id: int, movie_limit: int, show_l
                     # Keep the library artwork on show cards in sync with Jellyfin,
                     # just as we do for movies. Never replace an explicit upload.
                     for show in shows:
-                        if show.get("Id") and (show.get("ImageTags") or {}).get("Primary"):
+                        if show.get("Id"):
                             tmdb_id = get_jellyfin_tmdb_id(show.get("ProviderIds", {}))
                             if tmdb_id:
                                 await db.execute(

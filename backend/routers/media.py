@@ -5960,9 +5960,13 @@ async def refresh_artwork_from_jellyfin(
             if item and season_number is not None:
                 async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
                     response = await client.get(
-                        f"{conn.url.rstrip('/')}/Items",
+                        # Jellyfin's season rows are not reliably children of
+                        # the Series in /Items (their ParentId can be the
+                        # library folder). This dedicated endpoint returns the
+                        # show's actual seasons and works across both layouts.
+                        f"{conn.url.rstrip('/')}/Shows/{item['Id']}/Seasons",
                         headers={"Authorization": f'MediaBrowser Token="{conn.token}"'},
-                        params={"ParentId": item["Id"], "IncludeItemTypes": "Season", "Fields": "ParentIndexNumber,ImageTags", "Limit": 100},
+                        params={"UserId": conn.server_user_id, "Fields": "ParentIndexNumber,ImageTags", "Limit": 100},
                     )
                 item = next((candidate for candidate in response.json().get("Items", []) if candidate.get("ParentIndexNumber") == season_number), None) if response.is_success else None
         if item and item.get("Id"):
