@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, delete
+from sqlalchemy import select, desc, delete, func
 
 from db import get_db
 from models.media import Media
@@ -16,6 +16,32 @@ from models.users import User
 from core.enrichment import enrich_media, create_media_safely
 
 router = APIRouter()
+
+
+@router.get("/summary")
+async def get_rating_summary(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user_or_api_key),
+):
+    """Small API-key-compatible rating count endpoint for Home Assistant."""
+    result = await db.execute(
+        select(Media.media_type, func.count(Rating.id))
+        .join(Media, Media.id == Rating.media_id)
+        .where(
+            Rating.user_id == current_user.id,
+            Rating.rating.isnot(None),
+            Media.media_type.in_((MediaType.movie, MediaType.episode)),
+        )
+        .group_by(Media.media_type)
+    )
+    counts = dict(result.all())
+    movies = counts.get(MediaType.movie, 0)
+    episodes = counts.get(MediaType.episode, 0)
+    return {
+        "rated_movies": movies,
+        "rated_episodes": episodes,
+        "rated_items": movies + episodes,
+    }
 
 
 class RatingIn(BaseModel):

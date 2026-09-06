@@ -196,6 +196,22 @@ async def get_shows(library_id: str, url: str, token: str, user_id: str) -> list
 
     return all_items
 
+
+async def get_show_seasons(show_id: str, url: str, token: str, user_id: str) -> list:
+    """Return the real season records for a Jellyfin series.
+
+    Seasons are not reliably descendants of a series in the generic Items
+    endpoint, so use Jellyfin's dedicated endpoint instead.
+    """
+    data = await _get(
+        url,
+        token,
+        f"Shows/{show_id}/Seasons",
+        params={"UserId": user_id, "Fields": "IndexNumber,ParentIndexNumber,ImageTags"},
+    )
+    return data.get("Items", [])
+
+
 async def get_episodes(library_id: str, url: str, token: str, user_id: str) -> list:
     all_items = []
     start = 0
