@@ -2523,6 +2523,13 @@ async def _run_jellyfin_sync(user_id: int, job_id: int, movie_limit: int, show_l
                         new_watched_ids=_new_watched, new_ratings=_new_ratings, new_collected_ids=_new_collected, connection_id=conn.id,
                         seen_source_ids=_seen_collection_source_ids)
                     all_warnings.extend(w)
+                    # Prefer Jellyfin's primary artwork; the proxy keeps its token private.
+                    for item in items:
+                        if item.get("Id") and (item.get("ImageTags") or {}).get("Primary"):
+                            tmdb_id = get_jellyfin_tmdb_id(item.get("ProviderIds", {}))
+                            if tmdb_id:
+                                await db.execute(update(Media).where(Media.tmdb_id == tmdb_id, Media.media_type == MediaType.movie, ~Media.poster_path.like("/media/artwork/%")).values(poster_path=f"/media/jellyfin-image/{conn.id}/{item['Id']}"))
+                    await db.commit()
 
                 elif lib_type in ("tvshows", "tv"):
                     shows = await jellyfin.get_shows(lib_id, j_url, j_token, j_user)
