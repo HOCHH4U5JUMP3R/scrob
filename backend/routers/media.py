@@ -5928,37 +5928,39 @@ async def refresh_artwork_from_jellyfin(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Replace the current poster with the primary image currently in Jellyfin."""
+    """Replace the current poster with Jellyfin's current primary image."""
     if media_type not in {"movie", "series"}:
         raise HTTPException(400, "Artwork can only be refreshed for movies or series")
 
-    if media_type == "movie":
-        target = (await db.execute(select(Media).where(Media.tmdb_id == tmdb_id, Media.media_type == MediaType.movie))).scalar_one_or_none()
-        file_query = select(CollectionFile, MediaServerConnection).join(Collection).join(MediaServerConnection).where(
-            Collection.user_id == current_user.id, Collection.media_id == Media.id,
-            Media.tmdb_id == tmdb_id, Media.media_type == MediaType.movie,
-            CollectionFile.source == CollectionSource.jellyfin,
-        )
-    else:
-        target = (await db.execute(select(ShowModel).where(ShowModel.tmdb_id == tmdb_id))).scalar_one_or_none()
-        file_query = select(CollectionFile, MediaServerConnection).join(Collection).join(Media).join(MediaServerConnection).where(
-            Collection.user_id == current_user.id, Media.show_id == ShowModel.id,
-            ShowModel.tmdb_id == tmdb_id, CollectionFile.source == CollectionSource.jellyfin,
-        )
+    target = (
+        (await db.execute(select(Media).where(Media.tmdb_id == tmdb_id, Media.media_type == MediaType.movie))).scalar_one_or_none()
+        if media_type == "movie"
+        else (await db.execute(select(ShowModel).where(ShowModel.tmdb_id == tmdb_id))).scalar_one_or_none()
+    )
     if not target:
         raise HTTPException(404, "Media not found")
 
+    connections = (await db.execute(select(MediaServerConnection).where(
+        MediaServerConnection.user_id == current_user.id,
+        MediaServerConnection.type == "jellyfin",
+    ))).scalars().all()
     from core import jellyfin as jellyfin_core
-    for collection_file, conn in (await db.execute(file_query)).all():
-        if not collection_file.source_id:
-            continue
-        item = await jellyfin_core.get_item(conn.url, conn.token, collection_file.source_id, user_id=conn.server_user_id)
-        image_item_id = item.get("SeriesId") if media_type == "series" and item else (item or {}).get("Id")
-        if image_item_id:
-            target.poster_path = f"/media/jellyfin-image/{conn.id}/{image_item_id}"
+    for conn in connections:
+        if media_type == "movie":
+            item = await jellyfin_core.find_movie_by_tmdb_id(conn.url, conn.token, tmdb_id, user_id=conn.server_user_id)
+        else:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+                response = await client.get(
+                    f"{conn.url.rstrip('/')}/Items",
+                    headers={"Authorization": f'MediaBrowser Token="{conn.token}"'},
+                    params={"Recursive": "true", "IncludeItemTypes": "Series", "AnyProviderIdEquals": f"Tmdb.{tmdb_id}", "Fields": "ProviderIds", "Limit": 100},
+                )
+            item = next((candidate for candidate in response.json().get("Items", []) if jellyfin_core.get_jellyfin_tmdb_id(candidate.get("ProviderIds", {})) == tmdb_id), None) if response.is_success else None
+        if item and item.get("Id"):
+            target.poster_path = f"/media/jellyfin-image/{conn.id}/{item['Id']}"
             await db.commit()
             return {"poster_path": target.poster_path}
-    raise HTTPException(404, "No Jellyfin cover image found for this item")
+    raise HTTPException(404, "No matching item with a Jellyfin cover image was found")
 
 
 @router.post("/artwork/{media_type}/{tmdb_id}")
