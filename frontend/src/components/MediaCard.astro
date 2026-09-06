@@ -41,7 +41,6 @@ const showActionBar = !isPerson && !isCollection && !!user;
 // (state is already scoped to just that season by enrich_with_state).
 const isPercentageStyle = isSeries || isSeason;
 const watched = item.watched ?? false;
-const inLists = item.in_lists ?? [];
 const collectionPct = item.collection_pct ?? (item.in_library ? 100 : 0);
 const watchPct = item.watch_pct ?? (item.watched ? 100 : 0);
 const inLibrary = item.in_library ?? false;
@@ -57,6 +56,8 @@ const inLibrary = item.in_library ?? false;
   data-show-tvdb-id={item.show_tvdb_id ? String(item.show_tvdb_id) : ""}
   data-season={item.season_number != null ? String(item.season_number) : ""}
   data-episode-number={item.episode_number != null ? String(item.episode_number) : ""}
+  data-rate-title={cardTitle}
+  data-rate-poster={posterPath ?? ""}
 >
   <!-- Clickable poster -->
   {href ? (
@@ -129,7 +130,7 @@ const inLibrary = item.in_library ?? false;
   {showActionBar && (
     <CardActionBar
       watched={watched}
-      inLists={inLists}
+      userRating={item.user_rating}
       inLibrary={inLibrary}
       collectionPct={collectionPct}
       watchPct={watchPct}
@@ -177,4 +178,3 @@ const inLibrary = item.in_library ?? false;
     </div>
   )}
 </div>
-
