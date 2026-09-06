@@ -77,5 +77,31 @@ class LocalizedTitleSortTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("coalesce(nullif(show_translations.title", sql)
 
 
+class PosterSelectionTests(unittest.TestCase):
+    def test_local_artwork_is_preferred_over_remote_poster(self):
+        self.assertEqual(
+            media.preferred_poster_path([
+                "https://image.tmdb.org/t/p/w500/remote.jpg",
+                "/media/jellyfin-image/4/abc",
+            ]),
+            "/media/jellyfin-image/4/abc",
+        )
+
+    def test_uploaded_artwork_is_preferred_over_jellyfin_artwork(self):
+        self.assertEqual(
+            media.preferred_poster_path([
+                "/media/jellyfin-image/4/abc",
+                "/media/artwork/movie-123-cover.jpg",
+            ]),
+            "/media/artwork/movie-123-cover.jpg",
+        )
+
+    def test_first_available_poster_is_used_without_local_artwork(self):
+        self.assertEqual(
+            media.preferred_poster_path([None, "https://image.tmdb.org/t/p/w500/remote.jpg"]),
+            "https://image.tmdb.org/t/p/w500/remote.jpg",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
