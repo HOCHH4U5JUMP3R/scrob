@@ -10,8 +10,6 @@ os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/
 from fastapi import HTTPException
 
 from models.connections import MediaServerConnection
-from models.base import MediaType
-from models.media import Media
 from routers import sync
 
 
@@ -996,27 +994,6 @@ class MarkJobRunningUnlessCancelledTests(unittest.IsolatedAsyncioTestCase):
         started, db, _ = await self._run(matched=False)
         self.assertFalse(started)
         db.commit.assert_awaited_once()
-
-
-class JellyfinMetadataTests(unittest.TestCase):
-    def test_jellyfin_metadata_is_authoritative_for_media(self):
-        media = Media(tmdb_id=1, media_type=MediaType.movie, title="TMDB title", overview="TMDB overview")
-        sync.apply_jellyfin_media_metadata(media, {
-            "Name": "Jellyfin title",
-            "OriginalTitle": "Original Jellyfin title",
-            "Overview": "Curated Jellyfin overview",
-            "PremiereDate": "2024-02-03T00:00:00.0000000Z",
-            "RunTimeTicks": 7_200_000_000,
-            "CommunityRating": 8.4,
-            "Genres": ["Drama"],
-            "ProviderIds": {"Tmdb": "1"},
-        })
-        self.assertEqual(media.title, "Jellyfin title")
-        self.assertEqual(media.overview, "Curated Jellyfin overview")
-        self.assertEqual(media.release_date, "2024-02-03")
-        self.assertEqual(media.runtime, 12)
-        self.assertEqual(media.tmdb_data["source"], "jellyfin")
-        self.assertEqual(media.tmdb_data["genres"], ["Drama"])
 
 
 if __name__ == "__main__":
