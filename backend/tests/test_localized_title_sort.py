@@ -10,6 +10,7 @@ from sqlalchemy.dialects import postgresql
 
 from models.base import MediaType
 from routers import media, shows
+from core.translations import apply_media_translations
 
 
 class _Scalars:
@@ -78,6 +79,13 @@ class LocalizedTitleSortTests(unittest.IsolatedAsyncioTestCase):
 
 
 class PosterSelectionTests(unittest.TestCase):
+    def test_translation_does_not_replace_local_jellyfin_artwork(self):
+        items = [{"id": 1, "poster_path": "/media/jellyfin-image/4/abc"}]
+
+        apply_media_translations(items, {1: {"poster_path": "/tmdb-poster.jpg"}})
+
+        self.assertEqual(items[0]["poster_path"], "/media/jellyfin-image/4/abc")
+
     def test_local_artwork_is_preferred_over_remote_poster(self):
         self.assertEqual(
             media.preferred_poster_path([
