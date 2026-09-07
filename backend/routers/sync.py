@@ -350,8 +350,10 @@ async def sync_shows_batch(
         for s in shows_loaded:
             existing_shows[s.tmdb_id] = s
 
-    # The bulk TMDB upsert below refreshes active shows. Keep explicit uploads
-    # (including per-season uploads) while refreshing the remaining metadata.
+    # The bulk TMDB upsert below refreshes active shows. Keep local artwork
+    # (uploads and Jellyfin/Emby proxy paths) while refreshing the remaining
+    # metadata. Otherwise a restart-triggered metadata sync replaces cached
+    # library covers with TMDB art before the next media-server scan.
     artwork_overrides: dict[int, tuple[str | None, dict[int, str]]] = {}
     for tmdb_id, show in existing_shows.items():
         season_overrides = {
@@ -360,9 +362,9 @@ async def sync_shows_batch(
             if isinstance(season, dict)
             and isinstance(season.get("season_number"), int)
             and isinstance(season.get("poster_path"), str)
-            and season["poster_path"].startswith("/media/artwork/")
+            and season["poster_path"].startswith("/media/")
         }
-        poster_override = show.poster_path if (show.poster_path or "").startswith("/media/artwork/") else None
+        poster_override = show.poster_path if (show.poster_path or "").startswith("/media/") else None
         if poster_override or season_overrides:
             artwork_overrides[tmdb_id] = (poster_override, season_overrides)
 
