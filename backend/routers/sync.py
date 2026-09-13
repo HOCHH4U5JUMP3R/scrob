@@ -23,6 +23,7 @@ from models.playback_progress import PlaybackProgress
 from models.library_selections import JellyfinLibrarySelection, EmbyLibrarySelection, PlexLibrarySelection
 from models.plex_pending_push import PlexPendingPush
 from models.season_override import ShowSeasonOverride
+from models.episode_order import EpisodeOrderMapping, UserShowEpisodeOrder
 from datetime import datetime, timedelta, timezone
 from dateutil import parser
 from models.base import MediaType, CollectionSource
@@ -116,6 +117,27 @@ _MEDIA_BROWSER_ITEM_SOURCES = (
     CollectionSource.stremio,
     CollectionSource.arvio,
 )
+
+
+def _episode_push_position(
+    media: Media,
+    series_tmdb_id: int,
+    tvdb_positions: dict[tuple[int, int, int], EpisodeOrderMapping],
+) -> tuple[int, int] | None:
+    """Return the episode position used by the target media server.
+
+    Local episode rows always retain TMDB's numbering.  When the user selected
+    TVDB ordering for a show, Jellyfin/Emby instead expose its episodes at the
+    mapped TVDB season and episode numbers.  A missing mapping deliberately
+    falls back to the local position: it keeps normal TMDB-ordered shows and
+    partially mapped shows pushable without guessing a different episode.
+    """
+    if media.season_number is None or media.episode_number is None:
+        return None
+    mapping = tvdb_positions.get((series_tmdb_id, media.season_number, media.episode_number))
+    if mapping:
+        return mapping.tvdb_season_number, mapping.tvdb_episode_number
+    return media.season_number, media.episode_number
 
 
 async def _select_in_chunks(db: AsyncSession, stmt_builder, ids: list):
@@ -6567,6 +6589,10 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int) -> None:
             lookup_media_ids = missing_ids | season_rating_ids
             media_info: dict[int, Media] = {}
             show_tmdb_map: dict[int, int] = {}  # show.id → show.tmdb_id
+            # Keyed by TMDB position, but values contain the position that a
+            # TVDB-ordered Jellyfin/Emby library uses.  Only load mappings for
+            # shows the user explicitly switched to TVDB order.
+            tvdb_episode_positions: dict[tuple[int, int, int], EpisodeOrderMapping] = {}
 
             if lookup_media_ids:
                 media_rows_list = await _select_in_chunks(
@@ -6585,6 +6611,34 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int) -> None:
                         show_rows = await db.execute(select(Show.id, Show.tmdb_id).where(Show.id.in_(chunk)))
                         for row in show_rows.all():
                             show_tmdb_map[row[0]] = row[1]
+
+                if conn.type in ("jellyfin", "emby"):
+                    episode_series_tmdb_ids = {
+                        series_tmdb_id
+                        for m in media_info.values()
+                        if m.media_type == MediaType.episode
+                        and m.show_id is not None
+                        if (series_tmdb_id := show_tmdb_map.get(m.show_id)) is not None
+                    }
+                    if episode_series_tmdb_ids:
+                        preferences_result = await db.execute(
+                            select(UserShowEpisodeOrder.series_tmdb_id).where(
+                                UserShowEpisodeOrder.user_id == user_id,
+                                UserShowEpisodeOrder.episode_order == "tvdb",
+                                UserShowEpisodeOrder.series_tmdb_id.in_(episode_series_tmdb_ids),
+                            )
+                        )
+                        tvdb_series_tmdb_ids = {row[0] for row in preferences_result.all()}
+                        if tvdb_series_tmdb_ids:
+                            mappings_result = await db.execute(
+                                select(EpisodeOrderMapping).where(
+                                    EpisodeOrderMapping.series_tmdb_id.in_(tvdb_series_tmdb_ids)
+                                )
+                            )
+                            tvdb_episode_positions = {
+                                (mapping.series_tmdb_id, mapping.tmdb_season_number, mapping.tmdb_episode_number): mapping
+                                for mapping in mappings_result.scalars().all()
+                            }
 
             # For Jellyfin/Emby, AnyProviderIdEquals can't be trusted to
             # narrow results on every server version - a per-item lookup can
@@ -6710,17 +6764,21 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int) -> None:
                         return jellyfin_movie_index.get(m.tmdb_id)
                 elif m.media_type == MediaType.episode:
                     show_tmdb = show_tmdb_map.get(m.show_id) if m.show_id else None
-                    if not show_tmdb or m.season_number is None or m.episode_number is None:
+                    if not show_tmdb:
                         return None
+                    episode_position = _episode_push_position(m, show_tmdb, tvdb_episode_positions)
+                    if episode_position is None:
+                        return None
+                    season_number, episode_number = episode_position
                     if conn.type == "plex":
-                        found = await plex.find_episode_by_ids(conn.url, conn.token, show_tmdb, m.season_number, m.episode_number)
+                        found = await plex.find_episode_by_ids(conn.url, conn.token, show_tmdb, season_number, episode_number)
                     else:
                         series_id = jellyfin_series_index.get(show_tmdb)
                         if not series_id:
                             return None
                         client_mod = jellyfin if conn.type == "jellyfin" else emby
                         found = await client_mod.find_episode_in_series(
-                            conn.url, conn.token, series_id, m.season_number, m.episode_number, user_id=conn.server_user_id
+                            conn.url, conn.token, series_id, season_number, episode_number, user_id=conn.server_user_id
                         )
                 else:
                     return None
