@@ -6589,6 +6589,7 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int) -> None:
             lookup_media_ids = missing_ids | season_rating_ids
             media_info: dict[int, Media] = {}
             show_tmdb_map: dict[int, int] = {}  # show.id → show.tmdb_id
+            show_tvdb_map: dict[int, int] = {}  # show.id → show.tvdb_id
             # Keyed by TMDB position, but values contain the position that a
             # TVDB-ordered Jellyfin/Emby library uses.  Only load mappings for
             # shows the user explicitly switched to TVDB order.
@@ -6608,9 +6609,40 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int) -> None:
                     show_ids_list = list(show_ids_needed)
                     for i in range(0, len(show_ids_list), _MAX_IN_PARAMS):
                         chunk = show_ids_list[i : i + _MAX_IN_PARAMS]
-                        show_rows = await db.execute(select(Show.id, Show.tmdb_id).where(Show.id.in_(chunk)))
-                        for row in show_rows.all():
-                            show_tmdb_map[row[0]] = row[1]
+                        show_rows = await db.execute(select(Show.id, Show.tmdb_id, Show.tvdb_id).where(Show.id.in_(chunk)))
+                        for show_id, tmdb_id, tvdb_id in show_rows.all():
+                            if tmdb_id is not None:
+                                show_tmdb_map[show_id] = tmdb_id
+                            if tvdb_id is not None:
+                                show_tvdb_map[show_id] = tvdb_id
+
+                if conn.type in ("jellyfin", "emby"):
+                    episode_series_tmdb_ids = {
+                        series_tmdb_id
+                        for m in media_info.values()
+                        if m.media_type == MediaType.episode
+                        and m.show_id is not None
+                        if (series_tmdb_id := show_tmdb_map.get(m.show_id)) is not None
+                    }
+                    if episode_series_tmdb_ids:
+                        preferences_result = await db.execute(
+                            select(UserShowEpisodeOrder.series_tmdb_id).where(
+                                UserShowEpisodeOrder.user_id == user_id,
+                                UserShowEpisodeOrder.episode_order == "tvdb",
+                                UserShowEpisodeOrder.series_tmdb_id.in_(episode_series_tmdb_ids),
+                            )
+                        )
+                        tvdb_series_tmdb_ids = {row[0] for row in preferences_result.all()}
+                        if tvdb_series_tmdb_ids:
+                            mappings_result = await db.execute(
+                                select(EpisodeOrderMapping).where(
+                                    EpisodeOrderMapping.series_tmdb_id.in_(tvdb_series_tmdb_ids)
+                                )
+                            )
+                            tvdb_episode_positions = {
+                                (mapping.series_tmdb_id, mapping.tmdb_season_number, mapping.tmdb_episode_number): mapping
+                                for mapping in mappings_result.scalars().all()
+                            }
 
                 if conn.type in ("jellyfin", "emby"):
                     episode_series_tmdb_ids = {
@@ -6650,12 +6682,17 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int) -> None:
             # request against the unreliable filter.
             jellyfin_movie_index: dict[int, str] = {}
             jellyfin_series_index: dict[int, str] = {}
+            jellyfin_series_tvdb_index: dict[int, str] = {}
             if conn.type in ("jellyfin", "emby") and media_info:
                 client_mod = jellyfin if conn.type == "jellyfin" else emby
                 if any(m.media_type == MediaType.movie for m in media_info.values()):
                     jellyfin_movie_index = await client_mod.build_tmdb_index(conn.url, conn.token, "Movie")
                 if any(m.media_type == MediaType.episode for m in media_info.values()):
                     jellyfin_series_index = await client_mod.build_tmdb_index(conn.url, conn.token, "Series")
+                    # TVDB-only local shows are created by season overrides;
+                    # they cannot be found in the TMDB index above.
+                    if show_tvdb_map:
+                        jellyfin_series_tvdb_index = await client_mod.build_tvdb_index(conn.url, conn.token, "Series")
 
             # Build push list: (action, source_id, [rating])
             push_items: list[tuple] = []
@@ -6753,9 +6790,11 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int) -> None:
 
             async def _find_source_id(mid: int) -> str | None:
                 m = media_info.get(mid)
-                if not m or not m.tmdb_id:
+                if not m:
                     return None
                 if m.media_type == MediaType.movie:
+                    if not m.tmdb_id:
+                        return None
                     if conn.type == "plex":
                         found = await plex.find_movie_by_tmdb_id(conn.url, conn.token, m.tmdb_id)
                     else:
@@ -6764,16 +6803,34 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int) -> None:
                         return jellyfin_movie_index.get(m.tmdb_id)
                 elif m.media_type == MediaType.episode:
                     show_tmdb = show_tmdb_map.get(m.show_id) if m.show_id else None
-                    if not show_tmdb:
+                    show_tvdb = show_tvdb_map.get(m.show_id) if m.show_id else None
+                    if show_tmdb is None and show_tvdb is None:
                         return None
-                    episode_position = _episode_push_position(m, show_tmdb, tvdb_episode_positions)
+                    # TVDB-only override targets already store TVDB-native
+                    # positions; normal TMDB shows may need a mapping when
+                    # the user selected TVDB episode order.
+                    episode_position = (
+                        _episode_push_position(m, show_tmdb, tvdb_episode_positions)
+                        if show_tmdb is not None
+                        else (
+                            (m.season_number, m.episode_number)
+                            if m.season_number is not None and m.episode_number is not None
+                            else None
+                        )
+                    )
                     if episode_position is None:
                         return None
                     season_number, episode_number = episode_position
                     if conn.type == "plex":
+                        if show_tmdb is None:
+                            return None
                         found = await plex.find_episode_by_ids(conn.url, conn.token, show_tmdb, season_number, episode_number)
                     else:
-                        series_id = jellyfin_series_index.get(show_tmdb)
+                        series_id = (
+                            jellyfin_series_index.get(show_tmdb)
+                            if show_tmdb is not None
+                            else jellyfin_series_tvdb_index.get(show_tvdb)
+                        )
                         if not series_id:
                             return None
                         client_mod = jellyfin if conn.type == "jellyfin" else emby

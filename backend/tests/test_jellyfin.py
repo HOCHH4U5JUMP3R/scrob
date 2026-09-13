@@ -10,6 +10,37 @@ from core import jellyfin
 _REAL_ASYNC_CLIENT = httpx.AsyncClient
 
 
+class JellyfinProviderIdTests(unittest.TestCase):
+    def test_get_jellyfin_tvdb_id_accepts_provider_id_casing(self) -> None:
+        self.assertEqual(jellyfin.get_jellyfin_tvdb_id({"Tvdb": "12345"}), 12345)
+        self.assertEqual(jellyfin.get_jellyfin_tvdb_id({"TVDB": 67890}), 67890)
+        self.assertIsNone(jellyfin.get_jellyfin_tvdb_id({"Tvdb": "not-an-id"}))
+
+
+class JellyfinTvdbIndexTests(unittest.IsolatedAsyncioTestCase):
+    async def test_build_tvdb_index_uses_series_provider_ids(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(request.url.path, "/Items")
+            self.assertEqual(request.url.params["IncludeItemTypes"], "Series")
+            return httpx.Response(200, json={
+                "Items": [
+                    {"Id": "series-tvdb", "ProviderIds": {"Tvdb": "72566"}},
+                    {"Id": "series-without-tvdb", "ProviderIds": {"Tmdb": "1"}},
+                ],
+                "TotalRecordCount": 2,
+            })
+
+        transport = httpx.MockTransport(handler)
+        with patch.object(
+            jellyfin.httpx,
+            "AsyncClient",
+            side_effect=lambda **kwargs: _REAL_ASYNC_CLIENT(transport=transport, **kwargs),
+        ):
+            index = await jellyfin.build_tvdb_index("http://jellyfin.local", "token", "Series")
+
+        self.assertEqual(index, {72566: "series-tvdb"})
+
+
 class JellyfinEpisodeQueryTests(unittest.IsolatedAsyncioTestCase):
     async def test_get_episodes_excludes_virtual_missing_episodes(self) -> None:
         requested_params: dict[str, str] = {}
