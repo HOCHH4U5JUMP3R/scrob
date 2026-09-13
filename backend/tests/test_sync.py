@@ -106,6 +106,27 @@ class PlexSyncNeedsLibraryScanTests(unittest.TestCase):
         self.assertFalse(sync.plex_sync_needs_library_scan(conn))
 
 
+class EpisodePushPositionTests(unittest.TestCase):
+    def test_tvdb_order_uses_the_mapped_server_position(self):
+        media = SimpleNamespace(season_number=2, episode_number=5)
+        mapping = SimpleNamespace(tvdb_season_number=4, tvdb_episode_number=12)
+
+        position = sync._episode_push_position(
+            media,
+            111,
+            {(111, 2, 5): mapping},
+        )
+
+        self.assertEqual(position, (4, 12))
+
+    def test_missing_tvdb_mapping_falls_back_to_tmdb_position(self):
+        media = SimpleNamespace(season_number=2, episode_number=5)
+
+        position = sync._episode_push_position(media, 111, {})
+
+        self.assertEqual(position, (2, 5))
+
+
 class _PlexHistoryFakeDB:
     """Minimal async-session double for _backfill_plex_watch_history: just
     enough to serve db.get(MediaServerConnection), the existing-WatchEvent
