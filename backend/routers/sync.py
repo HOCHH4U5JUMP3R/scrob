@@ -6644,6 +6644,34 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int) -> None:
                                 for mapping in mappings_result.scalars().all()
                             }
 
+                if conn.type in ("jellyfin", "emby"):
+                    episode_series_tmdb_ids = {
+                        series_tmdb_id
+                        for m in media_info.values()
+                        if m.media_type == MediaType.episode
+                        and m.show_id is not None
+                        if (series_tmdb_id := show_tmdb_map.get(m.show_id)) is not None
+                    }
+                    if episode_series_tmdb_ids:
+                        preferences_result = await db.execute(
+                            select(UserShowEpisodeOrder.series_tmdb_id).where(
+                                UserShowEpisodeOrder.user_id == user_id,
+                                UserShowEpisodeOrder.episode_order == "tvdb",
+                                UserShowEpisodeOrder.series_tmdb_id.in_(episode_series_tmdb_ids),
+                            )
+                        )
+                        tvdb_series_tmdb_ids = {row[0] for row in preferences_result.all()}
+                        if tvdb_series_tmdb_ids:
+                            mappings_result = await db.execute(
+                                select(EpisodeOrderMapping).where(
+                                    EpisodeOrderMapping.series_tmdb_id.in_(tvdb_series_tmdb_ids)
+                                )
+                            )
+                            tvdb_episode_positions = {
+                                (mapping.series_tmdb_id, mapping.tmdb_season_number, mapping.tmdb_episode_number): mapping
+                                for mapping in mappings_result.scalars().all()
+                            }
+
             # For Jellyfin/Emby, AnyProviderIdEquals can't be trusted to
             # narrow results on every server version - a per-item lookup can
             # silently degrade into a full library scan (#300). When this job
