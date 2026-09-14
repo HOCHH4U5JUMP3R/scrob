@@ -27,7 +27,13 @@ def get_jellyfin_tmdb_id(provider_ids: dict) -> int | None:
 
 def get_jellyfin_tvdb_id(provider_ids: dict) -> int | None:
     """Return Jellyfin's numeric TVDB provider ID, when available."""
-    tid = provider_ids.get("Tvdb") or provider_ids.get("TVDB") or provider_ids.get("tvdb")
+    tid = (
+        provider_ids.get("Tvdb")
+        or provider_ids.get("TVDB")
+        or provider_ids.get("tvdb")
+        or provider_ids.get("TheTVDB")
+        or provider_ids.get("thetvdb")
+    )
     if tid is None:
         return None
     try:
