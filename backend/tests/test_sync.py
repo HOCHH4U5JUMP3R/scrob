@@ -106,6 +106,39 @@ class PlexSyncNeedsLibraryScanTests(unittest.TestCase):
         self.assertFalse(sync.plex_sync_needs_library_scan(conn))
 
 
+class EpisodePushPositionTests(unittest.TestCase):
+    def test_tvdb_order_uses_the_mapped_server_position(self):
+        media = SimpleNamespace(season_number=2, episode_number=5)
+        mapping = SimpleNamespace(tvdb_season_number=4, tvdb_episode_number=12)
+
+        position = sync._episode_push_position(
+            media,
+            111,
+            {(111, 2, 5): mapping},
+        )
+
+        self.assertEqual(position, (4, 12))
+
+    def test_missing_tvdb_mapping_falls_back_to_tmdb_position(self):
+        media = SimpleNamespace(season_number=2, episode_number=5)
+
+        position = sync._episode_push_position(media, 111, {})
+
+        self.assertEqual(position, (2, 5))
+
+
+class LinkTvdbShowsBatchTests(unittest.IsolatedAsyncioTestCase):
+    async def test_links_only_existing_tvdb_shows_to_their_source_series(self):
+        tvdb_show = SimpleNamespace(id=12, tvdb_id=72566)
+        with patch("routers.sync._select_in_chunks", AsyncMock(return_value=[tvdb_show])):
+            result = await sync.link_tvdb_shows_batch(
+                {"jellyfin-tvdb-series": 72566, "unmatched-series": 12345},
+                AsyncMock(),
+            )
+
+        self.assertEqual(result, {"jellyfin-tvdb-series": 12})
+
+
 class _PlexHistoryFakeDB:
     """Minimal async-session double for _backfill_plex_watch_history: just
     enough to serve db.get(MediaServerConnection), the existing-WatchEvent
