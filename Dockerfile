@@ -11,7 +11,9 @@ RUN npm run build
 # ── Stage 2: Runtime (Python + Node + supervisord) ────────────────────────────
 FROM python:3.12-slim
 
-ARG APP_VERSION=dev
+# Keep locally built images on the same release line as the fork base.  The
+# release workflow overrides this with the newly published semantic version.
+ARG APP_VERSION=2.17.0
 ENV APP_VERSION=${APP_VERSION}
 ENV TZ=UTC
 
