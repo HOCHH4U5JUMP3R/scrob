@@ -25,6 +25,23 @@ def get_jellyfin_tmdb_id(provider_ids: dict) -> int | None:
     return None
 
 
+def get_jellyfin_tvdb_id(provider_ids: dict) -> int | None:
+    """Return Jellyfin's numeric TVDB provider ID, when available."""
+    tid = (
+        provider_ids.get("Tvdb")
+        or provider_ids.get("TVDB")
+        or provider_ids.get("tvdb")
+        or provider_ids.get("TheTVDB")
+        or provider_ids.get("thetvdb")
+    )
+    if tid is None:
+        return None
+    try:
+        return int(str(tid))
+    except (TypeError, ValueError):
+        return None
+
+
 def _auth_headers(token: str) -> Dict[str, str]:
     # Jellyfin 12.0 removed legacy X-Emby-Token support; Authorization: MediaBrowser
     # Token="..." is the primary form and works on all versions (Jellyfin and Emby).
@@ -435,6 +452,35 @@ async def build_tmdb_index(url: str, token: str, item_type: str) -> Dict[int, st
         items = data.get("Items", [])
         for item in items:
             tid = get_jellyfin_tmdb_id(item.get("ProviderIds", {}))
+            if tid is not None and tid not in index:
+                index[tid] = item["Id"]
+        total = data.get("TotalRecordCount", 0)
+        start += page_size
+        if start >= total or not items:
+            break
+    return index
+
+
+async def build_tvdb_index(url: str, token: str, item_type: str) -> Dict[int, str]:
+    """Page the library once and map TVDB provider IDs to server item IDs.
+
+    Season overrides can create local shows that intentionally have no TMDB
+    ID. Their Jellyfin series is still safely resolvable through its TVDB ID.
+    """
+    index: Dict[int, str] = {}
+    start = 0
+    page_size = 500
+    while True:
+        data = await _get(url, token, "Items", params={
+            "Recursive": True,
+            "IncludeItemTypes": item_type,
+            "Fields": "ProviderIds,ImageTags",
+            "Limit": page_size,
+            "StartIndex": start,
+        })
+        items = data.get("Items", [])
+        for item in items:
+            tid = get_jellyfin_tvdb_id(item.get("ProviderIds", {}))
             if tid is not None and tid not in index:
                 index[tid] = item["Id"]
         total = data.get("TotalRecordCount", 0)
