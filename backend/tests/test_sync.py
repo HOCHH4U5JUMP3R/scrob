@@ -126,6 +126,25 @@ class EpisodePushPositionTests(unittest.TestCase):
 
         self.assertEqual(position, (2, 5))
 
+    def test_tvdb_mapping_uses_its_canonical_episode_id(self):
+        media = SimpleNamespace(season_number=2, episode_number=5, tmdb_data=None)
+        mapping = SimpleNamespace(tvdb_id=98765)
+
+        episode_id = sync._tvdb_episode_id(media, 111, {(111, 2, 5): mapping})
+
+        self.assertEqual(episode_id, 98765)
+
+    def test_tvdb_only_episode_uses_the_id_preserved_in_metadata(self):
+        media = SimpleNamespace(
+            season_number=1,
+            episode_number=1,
+            tmdb_data={"source": "tvdb", "tvdb_episode_id": "12345"},
+        )
+
+        episode_id = sync._tvdb_episode_id(media, None, {})
+
+        self.assertEqual(episode_id, 12345)
+
 
 class LinkTvdbShowsBatchTests(unittest.IsolatedAsyncioTestCase):
     async def test_links_only_existing_tvdb_shows_to_their_source_series(self):
