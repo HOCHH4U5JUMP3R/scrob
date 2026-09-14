@@ -127,6 +127,18 @@ class EpisodePushPositionTests(unittest.TestCase):
         self.assertEqual(position, (2, 5))
 
 
+class LinkTvdbShowsBatchTests(unittest.IsolatedAsyncioTestCase):
+    async def test_links_only_existing_tvdb_shows_to_their_source_series(self):
+        tvdb_show = SimpleNamespace(id=12, tvdb_id=72566)
+        with patch("routers.sync._select_in_chunks", AsyncMock(return_value=[tvdb_show])):
+            result = await sync.link_tvdb_shows_batch(
+                {"jellyfin-tvdb-series": 72566, "unmatched-series": 12345},
+                AsyncMock(),
+            )
+
+        self.assertEqual(result, {"jellyfin-tvdb-series": 12})
+
+
 class _PlexHistoryFakeDB:
     """Minimal async-session double for _backfill_plex_watch_history: just
     enough to serve db.get(MediaServerConnection), the existing-WatchEvent

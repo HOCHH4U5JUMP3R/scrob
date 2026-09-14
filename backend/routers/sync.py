@@ -29,7 +29,7 @@ from dateutil import parser
 from models.base import MediaType, CollectionSource
 from models.global_settings import GlobalSettings
 from core import arvio, jellyfin, emby, plex, nuvio, stremio, tmdb
-from core.jellyfin import get_jellyfin_tmdb_id
+from core.jellyfin import get_jellyfin_tmdb_id, get_jellyfin_tvdb_id
 import core.trakt as trakt_client
 from core.enrichment import enrich_media, is_unmapped_tvdb_episode, create_media_safely, enrich_media_safely, apply_media_change_safely, enrich_episode_from_tvdb
 from core.image_cache import pre_cache_all_collected_bg
@@ -482,6 +482,33 @@ async def sync_shows_batch(
             show_id_to_tmdb[show.id] = show.tmdb_id
 
     return show_map, show_id_to_tmdb
+
+
+async def link_tvdb_shows_batch(
+    series_tvdb_map: dict,
+    db: AsyncSession,
+) -> dict[str, int]:
+    """Link media-server series with TVDB-only metadata to local TVDB shows.
+
+    A manual TVDB match (and a TVDB season override) deliberately creates a
+    Show without a TMDB ID.  Pull sync used to only build its source-series
+    map from TMDB IDs, so the same episodes were treated as unmatched on every
+    subsequent Jellyfin/Emby pull despite already being linked locally.
+    """
+    tvdb_ids = {tvdb_id for tvdb_id in series_tvdb_map.values() if tvdb_id is not None}
+    if not tvdb_ids:
+        return {}
+    shows = await _select_in_chunks(
+        db,
+        lambda chunk: select(Show).where(Show.tvdb_id.in_(chunk)),
+        list(tvdb_ids),
+    )
+    shows_by_tvdb_id = {show.tvdb_id: show.id for show in shows if show.tvdb_id is not None}
+    return {
+        str(source_id): shows_by_tvdb_id[tvdb_id]
+        for source_id, tvdb_id in series_tvdb_map.items()
+        if tvdb_id in shows_by_tvdb_id
+    }
 
 
 async def sync_jellyfin_season_artwork(
@@ -2657,6 +2684,10 @@ async def _run_jellyfin_sync(user_id: int, job_id: int, movie_limit: int, show_l
                         s.get("Id"): get_jellyfin_tmdb_id(s.get("ProviderIds", {}))
                         for s in shows if get_jellyfin_tmdb_id(s.get("ProviderIds", {}))
                     }
+                    series_tvdb_map = {
+                        s.get("Id"): get_jellyfin_tvdb_id(s.get("ProviderIds", {}))
+                        for s in shows if get_jellyfin_tvdb_id(s.get("ProviderIds", {}))
+                    }
 
                     total_discovered += len(series_tmdb_map)
                     await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(total_items=total_discovered, current_step="Pulling shows"))
@@ -2664,6 +2695,10 @@ async def _run_jellyfin_sync(user_id: int, job_id: int, movie_limit: int, show_l
 
                     print(f"    Mapping {len(series_tmdb_map)} shows to TMDB...")
                     show_map, show_id_to_tmdb = await sync_shows_batch(series_tmdb_map, db, api_key=tmdb_api_key)
+                    # Keep manually matched TVDB-only shows linked on future
+                    # pulls. Without this, every TVDB-only series becomes a
+                    # fresh batch of "couldn't be matched to TMDB" warnings.
+                    show_map.update(await link_tvdb_shows_batch(series_tvdb_map, db))
                     # Keep the library artwork on show cards in sync with Jellyfin,
                     # just as we do for movies. Never replace an explicit upload.
                     for show in shows:
@@ -2878,6 +2913,10 @@ async def _run_emby_sync(user_id: int, job_id: int, movie_limit: int, show_limit
                         s.get("Id"): get_jellyfin_tmdb_id(s.get("ProviderIds", {}))
                         for s in shows if get_jellyfin_tmdb_id(s.get("ProviderIds", {}))
                     }
+                    series_tvdb_map = {
+                        s.get("Id"): get_jellyfin_tvdb_id(s.get("ProviderIds", {}))
+                        for s in shows if get_jellyfin_tvdb_id(s.get("ProviderIds", {}))
+                    }
 
                     total_discovered += len(series_tmdb_map)
                     await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(total_items=total_discovered, current_step="Pulling shows"))
@@ -2887,6 +2926,7 @@ async def _run_emby_sync(user_id: int, job_id: int, movie_limit: int, show_limit
                     show_map, show_id_to_tmdb = await sync_shows_batch(
                         series_tmdb_map, db, api_key=tmdb_api_key
                     )
+                    show_map.update(await link_tvdb_shows_batch(series_tvdb_map, db))
                     unmatched_shows = [s for s in shows if str(s.get("Id")) not in show_map]
                     for s in unmatched_shows:
                         all_warnings.append({
@@ -6615,34 +6655,6 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int) -> None:
                                 show_tmdb_map[show_id] = tmdb_id
                             if tvdb_id is not None:
                                 show_tvdb_map[show_id] = tvdb_id
-
-                if conn.type in ("jellyfin", "emby"):
-                    episode_series_tmdb_ids = {
-                        series_tmdb_id
-                        for m in media_info.values()
-                        if m.media_type == MediaType.episode
-                        and m.show_id is not None
-                        if (series_tmdb_id := show_tmdb_map.get(m.show_id)) is not None
-                    }
-                    if episode_series_tmdb_ids:
-                        preferences_result = await db.execute(
-                            select(UserShowEpisodeOrder.series_tmdb_id).where(
-                                UserShowEpisodeOrder.user_id == user_id,
-                                UserShowEpisodeOrder.episode_order == "tvdb",
-                                UserShowEpisodeOrder.series_tmdb_id.in_(episode_series_tmdb_ids),
-                            )
-                        )
-                        tvdb_series_tmdb_ids = {row[0] for row in preferences_result.all()}
-                        if tvdb_series_tmdb_ids:
-                            mappings_result = await db.execute(
-                                select(EpisodeOrderMapping).where(
-                                    EpisodeOrderMapping.series_tmdb_id.in_(tvdb_series_tmdb_ids)
-                                )
-                            )
-                            tvdb_episode_positions = {
-                                (mapping.series_tmdb_id, mapping.tmdb_season_number, mapping.tmdb_episode_number): mapping
-                                for mapping in mappings_result.scalars().all()
-                            }
 
                 if conn.type in ("jellyfin", "emby"):
                     episode_series_tmdb_ids = {
