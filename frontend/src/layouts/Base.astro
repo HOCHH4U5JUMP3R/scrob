@@ -470,7 +470,10 @@ const bottomNavItem = (active: boolean) =>
   <div id="watch-history-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
     <div class="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
       <div class="px-5 pt-5 pb-4 border-b border-zinc-800 flex items-center justify-between gap-3">
-        <h3 id="watch-history-modal-title" class="text-base font-bold text-zinc-100">Watch History</h3>
+        <div class="flex items-center gap-2 min-w-0">
+          <h3 id="watch-history-modal-title" class="text-base font-bold text-zinc-100">Watch History</h3>
+          <span id="watch-history-play-count" class="hidden shrink-0 rounded-full bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 text-xs font-bold text-blue-300"></span>
+        </div>
         <button id="watch-history-modal-close" class="text-zinc-500 hover:text-zinc-200 transition cursor-pointer shrink-0" aria-label="Close">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
@@ -1676,6 +1679,7 @@ const bottomNavItem = (active: boolean) =>
       _watchHistoryEpisodeNumber = episodeNumber;
 
       document.getElementById('watch-history-modal-title')!.textContent = 'Watch History';
+      document.getElementById('watch-history-play-count')!.classList.add('hidden');
       document.getElementById('watch-history-modal-events')!.classList.remove('hidden');
       document.getElementById('watch-history-add-play-label')!.classList.remove('hidden');
       resetWatchHistoryDateUI();
@@ -1689,6 +1693,7 @@ const bottomNavItem = (active: boolean) =>
       _watchHistoryBulkMode = { kind, seriesId, season, episodeOrder, btn, tvdbId };
 
       document.getElementById('watch-history-modal-title')!.textContent = kind === 'season' ? 'Mark Season Watched' : 'Mark Show Watched';
+      document.getElementById('watch-history-play-count')!.classList.add('hidden');
       document.getElementById('watch-history-modal-events')!.classList.add('hidden');
       document.getElementById('watch-history-unwatch-btn')!.classList.add('hidden');
       document.getElementById('watch-history-add-play-label')!.classList.add('hidden');
@@ -1744,6 +1749,9 @@ const bottomNavItem = (active: boolean) =>
         const { watched, events }: { watched: boolean; events: Array<{ id: number; watched_at: string | null }> } = await apiFetch(
           `/history/item-events?tmdb_id=${_watchHistoryTmdbId}&media_type=${_watchHistoryMediaType}${seriesQuery}`
         );
+        const playCountEl = document.getElementById('watch-history-play-count')!;
+        playCountEl.textContent = `${events.length} ${events.length === 1 ? 'play' : 'plays'}`;
+        playCountEl.classList.toggle('hidden', events.length === 0);
         if (events.length === 0) {
           eventsEl.innerHTML = '<div class="px-4 py-3 text-sm text-zinc-500 italic">No plays recorded yet</div>';
         } else {

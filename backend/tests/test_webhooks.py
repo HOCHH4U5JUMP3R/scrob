@@ -133,9 +133,13 @@ class WriteWatchEventDedupTests(IsolatedAsyncioTestCase):
         # A custom-date bulk mark can be echoed by Jellyfin/Emby after the
         # in-memory push marker has expired. Its watched_at is old, but its
         # created_at is recent, so the query must use created_at for every
-        # event—not only null-dated events—to avoid a second event dated now.
-        db = _FakeDB(queued_scalars=[None])
-        await _write_watch_event(db, user_id=1, media_id=2, progress_percent=1.0, progress_seconds=120, completed=True)
+        # event—including unknown-dated ones—to avoid a second event dated now.
+        # ``123`` represents the freshly written manual event returned by the
+        # duplicate query; the webhook must not add a second WatchEvent.
+        db = _FakeDB(queued_scalars=[123])
+        result = await _write_watch_event(db, user_id=1, media_id=2, progress_percent=1.0, progress_seconds=120, completed=True)
+        self.assertTrue(result)
+        self.assertEqual(db.added, [])
         compiled = str(db.executed_statements[0])
         self.assertIn("watch_events.created_at", compiled)
         self.assertIn("watch_events.created_at >=", compiled)
