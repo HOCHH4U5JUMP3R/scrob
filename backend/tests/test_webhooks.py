@@ -129,20 +129,16 @@ class WriteWatchEventDedupTests(IsolatedAsyncioTestCase):
         await _write_watch_event(db, user_id=1, media_id=2, progress_percent=1.0, progress_seconds=120, completed=True)
         self.assertEqual(len(db.added), 1)
 
-    async def test_unknown_dated_dedup_branch_is_bound_by_created_at(self):
-        # Regression for #355: the null-watched_at branch of this guard used
-        # to have no time bound at all ("NULL >= cutoff" is never true in SQL,
-        # so it matched unconditionally instead) - once a title had any
-        # unknown-dated watch event, every later real rewatch reported by
-        # Jellyfin/Plex/Emby was silently treated as a duplicate of it
-        # forever. watched_at can't carry that bound when it's NULL, so the
-        # branch must check created_at (when the row was actually inserted)
-        # instead - assert it's actually in the query, not just watched_at.
+    async def test_backdated_manual_event_is_deduplicated_by_insert_time(self):
+        # A custom-date bulk mark can be echoed by Jellyfin/Emby after the
+        # in-memory push marker has expired. Its watched_at is old, but its
+        # created_at is recent, so the query must use created_at for every
+        # event—not only null-dated events—to avoid a second event dated now.
         db = _FakeDB(queued_scalars=[None])
         await _write_watch_event(db, user_id=1, media_id=2, progress_percent=1.0, progress_seconds=120, completed=True)
         compiled = str(db.executed_statements[0])
         self.assertIn("watch_events.created_at", compiled)
-        self.assertIn("watch_events.watched_at IS NULL", compiled)
+        self.assertIn("watch_events.created_at >=", compiled)
 
 
 class WriteCompletedEventsAndFilterEchoesTests(IsolatedAsyncioTestCase):

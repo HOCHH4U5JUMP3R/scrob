@@ -651,6 +651,15 @@ async def _write_watch_event(
                 WatchEvent.media_id == media_id,
                 or_(
                     WatchEvent.watched_at >= recent_cutoff,
+                    # A manually logged custom date is normally in the past,
+                    # so it cannot satisfy the watched_at branch above.  A
+                    # delayed Jellyfin/Emby UserDataSaved echo for that manual
+                    # mark would otherwise create a second event stamped
+                    # "now" and make the same episode appear on both dates in
+                    # profile statistics.  created_at is the local insertion
+                    # time and therefore safely identifies this short-lived
+                    # duplicate window regardless of the chosen watch date.
+                    WatchEvent.created_at >= recent_cutoff,
                     # NULL >= cutoff is never true in SQL, so an unknown-dated
                     # event (manually logged without a date) needs its own
                     # branch to still be caught here — but watched_at can't
@@ -3429,4 +3438,3 @@ async def kodi_rating(
         db.add(Rating(media_id=media.id, user_id=user.id, rating=payload.rating))
     await db.commit()
     return {"status": "ok"}
-
