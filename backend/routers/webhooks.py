@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete, func, or_, and_
+from sqlalchemy import select, delete, func, or_
 from sqlalchemy.orm.exc import StaleDataError
 
 from db import get_db
@@ -660,15 +660,8 @@ async def _write_watch_event(
                     # time and therefore safely identifies this short-lived
                     # duplicate window regardless of the chosen watch date.
                     WatchEvent.created_at >= recent_cutoff,
-                    # NULL >= cutoff is never true in SQL, so an unknown-dated
-                    # event (manually logged without a date) needs its own
-                    # branch to still be caught here — but watched_at can't
-                    # say when that row was actually written, so it must be
-                    # bounded by created_at instead, same as the dated branch
-                    # above. Without that bound this matched an unknown-dated
-                    # event forever, silently swallowing every real rewatch
-                    # of a title logged that way as a "duplicate" (#355).
-                    and_(WatchEvent.watched_at.is_(None), WatchEvent.created_at >= recent_cutoff),
+                    # This also covers unknown-dated manual events: created_at,
+                    # unlike watched_at, always records when the row was written.
                 ),
             ).limit(1)
         )
