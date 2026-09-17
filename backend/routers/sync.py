@@ -140,6 +140,36 @@ def _episode_push_position(
     return media.season_number, media.episode_number
 
 
+def _tvdb_episode_id(
+    media: Media,
+    series_tmdb_id: int | None,
+    tvdb_positions: dict[tuple[int, int, int], EpisodeOrderMapping],
+) -> int | None:
+    """Return the canonical TVDB episode ID for an outbound server lookup.
+
+    Matching by season and episode number is ambiguous for series such as
+    Yu-Gi-Oh! Duel Monsters: Jellyfin can expose an alternate provider order
+    even when Scrob stores the TMDB order.  The mapping's TVDB episode ID is
+    stable across both orders, so prefer it whenever it is available.  TVDB-
+    only override rows retain the same value in ``tmdb_data`` for historical
+    schema compatibility.
+    """
+    if (
+        series_tmdb_id is not None
+        and media.season_number is not None
+        and media.episode_number is not None
+    ):
+        mapping = tvdb_positions.get((series_tmdb_id, media.season_number, media.episode_number))
+        if mapping:
+            return mapping.tvdb_id
+    tvdb_data = media.tmdb_data or {}
+    value = tvdb_data.get("tvdb_episode_id") if tvdb_data.get("source") == "tvdb" else None
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 async def _select_in_chunks(db: AsyncSession, stmt_builder, ids: list):
     """Execute a select statement using chunked IN clauses to avoid the 32767-parameter limit.
     stmt_builder(chunk) should return a SQLAlchemy select() statement for that chunk of IDs.
@@ -6695,6 +6725,7 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int) -> None:
             jellyfin_movie_index: dict[int, str] = {}
             jellyfin_series_index: dict[int, str] = {}
             jellyfin_series_tvdb_index: dict[int, str] = {}
+            jellyfin_episode_tvdb_index: dict[int, str] = {}
             if conn.type in ("jellyfin", "emby") and media_info:
                 client_mod = jellyfin if conn.type == "jellyfin" else emby
                 if any(m.media_type == MediaType.movie for m in media_info.values()):
@@ -6705,6 +6736,12 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int) -> None:
                     # they cannot be found in the TMDB index above.
                     if show_tvdb_map:
                         jellyfin_series_tvdb_index = await client_mod.build_tvdb_index(conn.url, conn.token, "Series")
+                    # Use exact episode IDs when mappings are available. This
+                    # avoids relying on the server's season/index numbering,
+                    # which can differ for alternate TVDB orders.
+                    jellyfin_episode_tvdb_index = await client_mod.build_tvdb_index(
+                        conn.url, conn.token, "Episode"
+                    )
 
             # Build push list: (action, source_id, [rating])
             push_items: list[tuple] = []
@@ -6818,6 +6855,12 @@ async def _run_full_push(user_id: int, connection_id: int, job_id: int) -> None:
                     show_tvdb = show_tvdb_map.get(m.show_id) if m.show_id else None
                     if show_tmdb is None and show_tvdb is None:
                         return None
+                    if conn.type in ("jellyfin", "emby"):
+                        tvdb_episode_id = _tvdb_episode_id(m, show_tmdb, tvdb_episode_positions)
+                        if tvdb_episode_id is not None:
+                            exact_id = jellyfin_episode_tvdb_index.get(tvdb_episode_id)
+                            if exact_id:
+                                return exact_id
                     # TVDB-only override targets already store TVDB-native
                     # positions; normal TMDB shows may need a mapping when
                     # the user selected TVDB episode order.

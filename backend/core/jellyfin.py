@@ -466,6 +466,8 @@ async def build_tvdb_index(url: str, token: str, item_type: str) -> Dict[int, st
 
     Season overrides can create local shows that intentionally have no TMDB
     ID. Their Jellyfin series is still safely resolvable through its TVDB ID.
+    The same index can be built for episodes: an episode's TVDB ID identifies
+    it unambiguously even when the server uses a different episode order.
     """
     index: Dict[int, str] = {}
     start = 0
