@@ -2007,6 +2007,7 @@ async def sync_items(
 
     # All relevant media, keyed for O(1) lookup
     media_by_episode: dict[tuple, Media] = {}   # (show_id, season, ep) → Media
+    media_by_tvdb_episode_id: dict[tuple[int, int], Media] = {}  # (show_id, TVDB episode id) → Media
     media_by_tmdb: dict[tuple, Media] = {}       # (tmdb_id, media_type) → Media
 
     if media_type == MediaType.episode:
@@ -2019,6 +2020,62 @@ async def sync_items(
             )
             for m in episodes:
                 media_by_episode[(m.show_id, m.season_number, m.episode_number)] = m
+
+            # Jellyfin/Emby may expose an episode using a TVDB provider id
+            # while omitting SeasonNumber entirely (or using a different
+            # episode order). Resolve that stable provider id to the canonical
+            # TMDB-numbered Media row before the main loop. Without this,
+            # alternate-order episodes are treated as new media and their
+            # server LastPlayedDate is imported as a duplicate "watched now"
+            # event even though the canonical Scrob row already has history.
+            series_tmdb_ids = {
+                show_id_to_tmdb.get(show_id)
+                for show_id in show_ids
+                if show_id_to_tmdb.get(show_id)
+            }
+            if series_tmdb_ids:
+                mapping_result = await _select_in_chunks(
+                    db,
+                    lambda chunk: select(EpisodeOrderMapping).where(
+                        EpisodeOrderMapping.series_tmdb_id.in_(chunk)
+                    ),
+                    list(series_tmdb_ids),
+                )
+                media_by_tmdb_episode_key = {
+                    (m.show_id, m.season_number, m.episode_number): m
+                    for m in episodes
+                    if m.show_id is not None
+                    and m.season_number is not None
+                    and m.episode_number is not None
+                }
+                show_id_by_tmdb = {
+                    tid: sid for sid, tid in show_id_to_tmdb.items() if tid in series_tmdb_ids
+                }
+                for mapping in mapping_result:
+                    show_id = show_id_by_tmdb.get(mapping.series_tmdb_id)
+                    if show_id is None:
+                        continue
+                    media = media_by_tmdb_episode_key.get(
+                        (show_id, mapping.tmdb_season_number, mapping.tmdb_episode_number)
+                    )
+                    if media is not None:
+                        media_by_tvdb_episode_id[(show_id, mapping.tvdb_id)] = media
+
+                # Older Scrob rows may already carry the TVDB episode id in
+                # tmdb_data even when EpisodeOrderMapping has not been built
+                # yet. Keep that legacy identity usable during the same sync.
+                for media in episodes:
+                    data = media.tmdb_data or {}
+                    if data.get("source") == "tvdb" and data.get("tvdb_episode_id") is not None:
+                        try:
+                            tvdb_id = int(data["tvdb_episode_id"])
+                        except (TypeError, ValueError):
+                            continue
+                        if media.show_id is not None:
+                            media_by_tvdb_episode_id.setdefault(
+                                (media.show_id, tvdb_id), media
+                            )
+
         # Also pre-load orphaned episode rows (show_id=None, created by webhook before first sync)
         # so they can be deduplicated by TMDB ID instead of creating a second row.
         ep_tmdb_ids: set[int] = set()
@@ -2249,6 +2306,35 @@ async def sync_items(
                 else:
                     show_id = show_map.get(str(parent_id)) if media_type == MediaType.episode else None
 
+                    # Jellyfin/Emby can identify anime episodes by TVDB provider
+                    # id while ParentIndexNumber is None or belongs to another
+                    # episode order. Prefer the canonical Scrob Media row in
+                    # that case. This must happen before the normal (show,season,
+                    #episode) lookup, otherwise a second Media row is created
+                    # and its current Jellyfin LastPlayedDate becomes a bogus
+                    # new watch event.
+                    if (
+                        media_type == MediaType.episode
+                        and show_id
+                        and source in _MEDIA_BROWSER_ITEM_SOURCES
+                    ):
+                        tvdb_id_raw = (item.get("ProviderIds") or {}).get("Tvdb")
+                        try:
+                            tvdb_id = int(tvdb_id_raw) if tvdb_id_raw is not None else None
+                        except (TypeError, ValueError):
+                            tvdb_id = None
+                        canonical_media = (
+                            media_by_tvdb_episode_id.get((show_id, tvdb_id))
+                            if tvdb_id is not None
+                            else None
+                        )
+                        if canonical_media is not None:
+                            media = canonical_media
+                            season_num = canonical_media.season_number
+                            episode_num = canonical_media.episode_number
+                        else:
+                            media = None
+
                     # For Jellyfin/Emby episodes whose metadata scraping failed: the item title
                     # is often the raw filename (e.g. "Show.Name.S02E01"). Try to salvage the
                     # season/episode numbers from the filename so the item can be stored and
@@ -2263,20 +2349,19 @@ async def sync_items(
                             if episode_num is None:
                                 episode_num = int(_m.group(2))
 
-                    # Look up existing media from pre-loaded dicts (O(1), no DB query)
-                    if media_type == MediaType.episode and show_id:
-                        media = media_by_episode.get((show_id, season_num, episode_num))
-                        if not media and tmdb_id:
-                            # Fallback: catch orphaned rows created by webhook without show_id
+                    # Look up existing media from pre-loaded dicts (O(1), no DB query).
+                    # Do not overwrite a TVDB-id match from the block above.
+                    if media is None:
+                        if media_type == MediaType.episode and show_id:
+                            media = media_by_episode.get((show_id, season_num, episode_num))
+                            if not media and tmdb_id:
+                                # Fallback: catch orphaned rows created by webhook without show_id
+                                media = media_by_tmdb.get((tmdb_id, media_type))
+                                if media:
+                                    media.show_id = show_id
+                                    media_by_episode[(show_id, season_num, episode_num)] = media
+                        elif tmdb_id:
                             media = media_by_tmdb.get((tmdb_id, media_type))
-                            if media:
-                                # Backfill missing show_id so future lookups work correctly
-                                media.show_id = show_id
-                                media_by_episode[(show_id, season_num, episode_num)] = media
-                    elif tmdb_id:
-                        media = media_by_tmdb.get((tmdb_id, media_type))
-                    else:
-                        media = None
 
                     if media and (media.id, source) in files_by_media_source:
                         # Media has a CollectionFile for this source but a different source_id
