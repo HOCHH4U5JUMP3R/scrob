@@ -2048,11 +2048,11 @@ async def sync_items(
                     and m.season_number is not None
                     and m.episode_number is not None
                 }
+                show_id_by_tmdb = {
+                    tid: sid for sid, tid in show_id_to_tmdb.items() if tid in series_tmdb_ids
+                }
                 for mapping in mapping_result:
-                    show_id = next(
-                        (sid for sid, tid in show_id_to_tmdb.items() if tid == mapping.series_tmdb_id),
-                        None,
-                    )
+                    show_id = show_id_by_tmdb.get(mapping.series_tmdb_id)
                     if show_id is None:
                         continue
                     media = media_by_tmdb_episode_key.get(
@@ -2060,6 +2060,21 @@ async def sync_items(
                     )
                     if media is not None:
                         media_by_tvdb_episode_id[(show_id, mapping.tvdb_id)] = media
+
+                # Older Scrob rows may already carry the TVDB episode id in
+                # tmdb_data even when EpisodeOrderMapping has not been built
+                # yet. Keep that legacy identity usable during the same sync.
+                for media in episodes:
+                    data = media.tmdb_data or {}
+                    if data.get("source") == "tvdb" and data.get("tvdb_episode_id") is not None:
+                        try:
+                            tvdb_id = int(data["tvdb_episode_id"])
+                        except (TypeError, ValueError):
+                            continue
+                        if media.show_id is not None:
+                            media_by_tvdb_episode_id.setdefault(
+                                (media.show_id, tvdb_id), media
+                            )
 
         # Also pre-load orphaned episode rows (show_id=None, created by webhook before first sync)
         # so they can be deduplicated by TMDB ID instead of creating a second row.
@@ -2336,19 +2351,17 @@ async def sync_items(
 
                     # Look up existing media from pre-loaded dicts (O(1), no DB query).
                     # Do not overwrite a TVDB-id match from the block above.
-                    if media_type == MediaType.episode and show_id and media is None:
-                        media = media_by_episode.get((show_id, season_num, episode_num))
-                        if not media and tmdb_id:
-                            # Fallback: catch orphaned rows created by webhook without show_id
+                    if media is None:
+                        if media_type == MediaType.episode and show_id:
+                            media = media_by_episode.get((show_id, season_num, episode_num))
+                            if not media and tmdb_id:
+                                # Fallback: catch orphaned rows created by webhook without show_id
+                                media = media_by_tmdb.get((tmdb_id, media_type))
+                                if media:
+                                    media.show_id = show_id
+                                    media_by_episode[(show_id, season_num, episode_num)] = media
+                        elif tmdb_id:
                             media = media_by_tmdb.get((tmdb_id, media_type))
-                            if media:
-                                # Backfill missing show_id so future lookups work correctly
-                                media.show_id = show_id
-                                media_by_episode[(show_id, season_num, episode_num)] = media
-                    elif tmdb_id:
-                        media = media_by_tmdb.get((tmdb_id, media_type))
-                    else:
-                        media = None
 
                     if media and (media.id, source) in files_by_media_source:
                         # Media has a CollectionFile for this source but a different source_id
