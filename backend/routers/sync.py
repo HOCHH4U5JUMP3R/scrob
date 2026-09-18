@@ -2206,10 +2206,32 @@ async def sync_items(
                 if seen_source_ids is not None:
                     seen_source_ids.add(source_id)
 
+                # Resolve the logical episode identity before looking at an existing
+                # CollectionFile.  A previous sync may already have stored this Jellyfin
+                # source_id against the *wrong* Scrob Media row (typically because Jellyfin
+                # exposed a TVDB-ordered episode with no ParentIndexNumber).  In that case
+                # the old file_entry branch used to bypass the TVDB mapping entirely, so the
+                # subsequent sync saw the server's current LastPlayedDate as a brand-new
+                # watch even though the canonical row already contained the historical date.
+                # The TVDB id is the stable identity; make the existing source row follow it.
+                show_id: int | None = show_map.get(str(parent_id)) if media_type == MediaType.episode else None
+                canonical_media_for_item: Media | None = None
+                if (
+                    media_type == MediaType.episode
+                    and show_id
+                    and source in _MEDIA_BROWSER_ITEM_SOURCES
+                ):
+                    tvdb_id_raw = (item.get("ProviderIds") or {}).get("Tvdb")
+                    try:
+                        tvdb_id = int(tvdb_id_raw) if tvdb_id_raw is not None else None
+                    except (TypeError, ValueError):
+                        tvdb_id = None
+                    if tvdb_id is not None:
+                        canonical_media_for_item = media_by_tvdb_episode_id.get((show_id, tvdb_id))
+
                 file_entry = existing_files.get((source_id, episode_num))
                 media_id_for_watch: int | None = None
                 heal_collection_id: int | None = None
-                show_id: int | None = None  # (re)assigned below for episodes; stays None for movies
 
                 # Detect re-match: same Plex ratingKey but TMDB ID changed.
                 # Evict the stale CollectionFile so the item is re-processed below.
@@ -2236,6 +2258,48 @@ async def sync_items(
 
                 if file_entry:
                     existing_file, existing_media_id, existing_media_obj = file_entry
+
+                    # The source_id already exists, but it may have been attached to a
+                    # different Media row by an earlier sync.  Do not let that stale
+                    # attachment win over the stable TVDB episode identity.  Most
+                    # importantly, use the canonical row for watch-history comparison:
+                    # if it already has the 2008 event, Jellyfin's post-push LastPlayedDate
+                    # (which is necessarily "now") must not create a second event.
+                    if (
+                        canonical_media_for_item is not None
+                        and canonical_media_for_item.id != existing_media_id
+                    ):
+                        existing_media_id = canonical_media_for_item.id
+                        existing_media_obj = canonical_media_for_item
+                        if sync_collection:
+                            canonical_coll_id = existing_coll_by_media_id.get(canonical_media_for_item.id)
+                            if canonical_coll_id is None:
+                                coll_stmt = insert(Collection).values(
+                                    user_id=user_id,
+                                    media_id=canonical_media_for_item.id,
+                                ).on_conflict_do_nothing(constraint="uq_collection_user_media")
+                                await db.execute(coll_stmt)
+                                await db.flush()
+                                coll_result = await db.execute(
+                                    select(Collection.id).where(
+                                        Collection.user_id == user_id,
+                                        Collection.media_id == canonical_media_for_item.id,
+                                    )
+                                )
+                                canonical_coll_id = coll_result.scalar_one()
+                                existing_coll_by_media_id[canonical_media_for_item.id] = canonical_coll_id
+                            existing_file.collection_id = canonical_coll_id
+                            old_collection_id = existing_file.collection_id
+                            # The old collection id is captured before reassignment below.
+                            # It is intentionally cleaned up only when no files remain.
+                            heal_collection_id = canonical_coll_id
+                        files_by_media_source.pop((file_entry[2].id, source), None)
+                        files_by_media_source[(canonical_media_for_item.id, source)] = existing_file
+                        existing_files[(source_id, episode_num)] = (
+                            existing_file,
+                            canonical_media_for_item.id,
+                            canonical_media_for_item,
+                        )
                     if sync_collection:
                         # Update quality metadata in-place on the CollectionFile.
                         # Never overwrite language lists with empty — bulk endpoints (e.g. Plex
