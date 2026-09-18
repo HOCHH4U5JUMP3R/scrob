@@ -2288,11 +2288,23 @@ async def sync_items(
                                 )
                                 canonical_coll_id = coll_result.scalar_one()
                                 existing_coll_by_media_id[canonical_media_for_item.id] = canonical_coll_id
-                            existing_file.collection_id = canonical_coll_id
                             old_collection_id = existing_file.collection_id
-                            # The old collection id is captured before reassignment below.
-                            # It is intentionally cleaned up only when no files remain.
+                            existing_file.collection_id = canonical_coll_id
                             heal_collection_id = canonical_coll_id
+                            # Drop the now-empty old collection after moving its last
+                            # source file.  The Collection row is only an ownership/
+                            # membership container; the canonical Media row retains
+                            # the actual watch history.
+                            if old_collection_id != canonical_coll_id:
+                                old_coll = await db.get(Collection, old_collection_id)
+                                if old_coll:
+                                    remaining = await db.execute(
+                                        select(func.count(CollectionFile.id)).where(
+                                            CollectionFile.collection_id == old_collection_id
+                                        )
+                                    )
+                                    if remaining.scalar() == 0:
+                                        await db.delete(old_coll)
                         files_by_media_source.pop((file_entry[2].id, source), None)
                         files_by_media_source[(canonical_media_for_item.id, source)] = existing_file
                         existing_files[(source_id, episode_num)] = (
