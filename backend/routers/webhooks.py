@@ -13,6 +13,7 @@ from db import get_db
 from dependencies import get_current_user_or_api_key
 from models.media import Media
 from models.show import Show
+from models.episode_order import EpisodeOrderMapping
 from models.collection import Collection, CollectionFile
 from models.events import WatchEvent
 from models.ratings import Rating
@@ -793,6 +794,7 @@ def parse_jellyfin_payload(payload: dict) -> dict | None:
             "year": item.get("ProductionYear"),
             "media_type": "movie" if item.get("Type") == "Movie" else "episode",
             "tmdb_id": item.get("ProviderIds", {}).get("Tmdb"),
+            "tvdb_id": item.get("ProviderIds", {}).get("Tvdb"),
             "series_tmdb_id": item.get("SeriesProviderIds", {}).get("Tmdb"),
             # Emby's native webhook notifications use this nested shape and don't
             # reliably populate SeriesProviderIds the way Jellyfin's "send all
@@ -828,6 +830,7 @@ def parse_jellyfin_payload(payload: dict) -> dict | None:
         or payload.get("Provider_Tmdb")
         or payload.get("Provider_tmdbid")
     )
+    tvdb_id = payload.get("Provider_tvdb") or payload.get("Provider_Tvdb") or payload.get("Provider_tvdbid")
     position_ticks = payload.get("PlaybackPositionTicks") or payload.get("PositionTicks") or 0
     runtime_ticks = payload.get("RunTimeTicks") or 0
 
@@ -843,6 +846,7 @@ def parse_jellyfin_payload(payload: dict) -> dict | None:
         "year": payload.get("Year") or payload.get("ProductionYear"),
         "media_type": "movie" if item_type == "Movie" else "episode",
         "tmdb_id": str(tmdb_id) if tmdb_id else None,
+        "tvdb_id": str(tvdb_id) if tvdb_id else None,
         "series_tmdb_id": None,  # not exposed in flat format; resolved in find_or_create
         "series_name": payload.get("SeriesName"),  # used to look up show when series_tmdb_id is absent
         "season_number": season_num,
@@ -1042,9 +1046,54 @@ async def _resolve_show_for_episode(
     return show, series_tmdb_id
 
 
+async def _resolve_tvdb_episode_id_to_tmdb_position(
+    db: AsyncSession, show: Show, tvdb_episode_id: int | str,
+    tmdb_api_key: str | None, tvdb_api_key: str | None,
+) -> tuple[int, int] | None:
+    """Resolve a Jellyfin TVDB episode id to the canonical TMDB position."""
+    if not (show.tvdb_id and tmdb_api_key and tvdb_api_key and tvdb_episode_id is not None):
+        return None
+    try:
+        tvdb_episode_id = int(tvdb_episode_id)
+        result = await db.execute(select(EpisodeOrderMapping).where(
+            EpisodeOrderMapping.series_tmdb_id == show.tmdb_id,
+            EpisodeOrderMapping.tvdb_id == tvdb_episode_id,
+        ))
+        mapping = result.scalars().first()
+        if mapping is None:
+            from core.episode_order import ensure_episode_order_mapping
+            await ensure_episode_order_mapping(db, show.tmdb_id, tmdb_api_key, tvdb_api_key)
+            result = await db.execute(select(EpisodeOrderMapping).where(
+                EpisodeOrderMapping.series_tmdb_id == show.tmdb_id,
+                EpisodeOrderMapping.tvdb_id == tvdb_episode_id,
+            ))
+            mapping = result.scalars().first()
+        if mapping is None:
+            return None
+        await reconcile_divergent_episode_media(db, show, season_number=mapping.tvdb_season_number)
+        return mapping.tmdb_season_number, mapping.tmdb_episode_number
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception(
+            "TVDB episode id resolution failed for show=%s tvdb_episode_id=%s",
+            show.id, tvdb_episode_id,
+        )
+        return None
+
 async def find_or_create_media_jellyfin(
     data: dict, db: AsyncSession, api_key: str = None, user_id: int | None = None
 ) -> Media | None:
+    # Resolve TVDB episode identity before the source-id fast path. Jellyfin
+    # may report a TVDB episode id without SeasonNumber (common for anime).
+    show, series_tmdb_id = await _resolve_show_for_episode(data, db, api_key)
+    if show and data["media_type"] == "episode" and data.get("tvdb_id"):
+        _, tvdb_api_key, _ = await _resolve_tvdb_fallback(db, show, user_id)
+        canonical = await _resolve_tvdb_episode_id_to_tmdb_position(
+            db, show, data["tvdb_id"], api_key, tvdb_api_key,
+        )
+        if canonical:
+            data["season_number"], data["episode_number"] = canonical
+
     # 1. Match by source item ID via CollectionFile (fastest path post-sync).
     # This function is shared by both Jellyfin and Emby webhooks (they're the
     # same REST API) - matching only CollectionSource.jellyfin meant every
@@ -1084,9 +1133,6 @@ async def find_or_create_media_jellyfin(
                         tvdb_id=tvdb_id, tvdb_api_key=tvdb_api_key, tvdb_lang=tvdb_lang,
                     )
             return media
-
-    # Resolve show for episode dedup and enrichment
-    show, series_tmdb_id = await _resolve_show_for_episode(data, db, api_key)
 
     # 2. Match by TMDB ID (handles rapid webhook events before first sync, or items
     #    already added via another source / manually — prevents duplicate media rows)
