@@ -67,23 +67,29 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
         <div class="flex items-center justify-between gap-4 flex-wrap mb-6">
           <h2 class="section-headline">Watching</h2>
           <div class="flex items-center gap-2">
-            <select id="period-select" class="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm font-bold rounded-xl px-3 py-2 cursor-pointer hover:border-zinc-500 transition focus:outline-none appearance-none">
-              <option value="all">All time</option>
-              <option value="year">This year</option>
-              <option value="month">This month</option>
-              <option value="week">This week</option>
-              <option value="last365">Last 365 days</option>
-              <option value="last30">Last 30 days</option>
-              <option value="last7">Last 7 days</option>
-            </select>
-            <div id="period-nav" style="display:none" class="items-center gap-1">
-              <button id="prev-btn" class="w-8 h-8 flex items-center justify-center rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition disabled:opacity-30 disabled:cursor-not-allowed">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-              </button>
-              <span id="period-label" class="text-sm font-bold text-zinc-400 min-w-28 text-center px-1"></span>
-              <button id="next-btn" class="w-8 h-8 flex items-center justify-center rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition disabled:opacity-30 disabled:cursor-not-allowed" disabled>
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-              </button>
+            <div class="flex items-center gap-2 flex-wrap justify-end">
+              <select id="period-select" class="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm font-bold rounded-xl px-3 py-2 cursor-pointer hover:border-zinc-500 transition focus:outline-none">
+                <option value="all">All time</option>
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="week">This week</option>
+                <option value="lastweek">Last week</option>
+                <option value="month">This month</option>
+                <option value="lastmonth">Last month</option>
+                <option value="year">This year</option>
+                <option value="lastyear">Last year</option>
+                <option value="last7">Last 7 days</option>
+                <option value="last30">Last 30 days</option>
+                <option value="last90">Last 90 days</option>
+                <option value="last365">Last 365 days</option>
+                <option value="custom">Custom range…</option>
+              </select>
+              <div id="custom-range" class="hidden items-center gap-2">
+                <input id="custom-since" type="date" class="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm font-bold rounded-xl px-3 py-2 focus:outline-none focus:border-zinc-500">
+                <span class="text-zinc-600 font-bold">–</span>
+                <input id="custom-until" type="date" class="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm font-bold rounded-xl px-3 py-2 focus:outline-none focus:border-zinc-500">
+                <button id="custom-apply" class="px-3 py-2 bg-sky-600 hover:bg-sky-500 text-white text-sm font-black rounded-xl transition">Apply</button>
+              </div>
             </div>
           </div>
         </div>
@@ -224,47 +230,46 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
 <script define:vars={{ userId: id, token, isOwnStats }}>
   // ── State ──────────────────────────────────────────────────────────────────
   let currentPeriod = 'all';
-  let currentOffset = 0;
 
   // ── Period computation ─────────────────────────────────────────────────────
   const _fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  const _short = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const _short = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
-  function computeRange(period, offset) {
-    if (period === 'all') return { since: null, until: null, label: 'All time', canNav: false };
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    let since, until, label;
-    if (period === 'year') {
-      const year = today.getFullYear() + offset;
-      since = new Date(year, 0, 1); until = new Date(year, 11, 31);
-      label = String(year);
-    } else if (period === 'month') {
-      const base = new Date(today.getFullYear(), today.getMonth() + offset, 1);
-      since = base; until = new Date(base.getFullYear(), base.getMonth() + 1, 0);
-      label = base.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    } else if (period === 'week') {
-      const dow = today.getDay();
-      const monday = new Date(today);
-      monday.setDate(today.getDate() + (dow === 0 ? -6 : 1 - dow) + offset * 7);
-      const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
-      since = monday; until = sunday;
-      label = monday.getMonth() === sunday.getMonth()
-        ? `${monday.toLocaleDateString('en-US',{month:'short'})} ${monday.getDate()}–${sunday.getDate()}`
-        : `${_short(monday)} – ${_short(sunday)}`;
-    } else if (period === 'last365') {
-      until = new Date(today); until.setDate(today.getDate() + offset * 365);
-      since = new Date(until); since.setDate(until.getDate() - 364);
-      label = offset === 0 ? 'Last 365 days' : `${_short(since)} – ${_short(until)}`;
-    } else if (period === 'last30') {
-      until = new Date(today); until.setDate(today.getDate() + offset * 30);
-      since = new Date(until); since.setDate(until.getDate() - 29);
-      label = offset === 0 ? 'Last 30 days' : `${_short(since)} – ${_short(until)}`;
-    } else if (period === 'last7') {
-      until = new Date(today); until.setDate(today.getDate() + offset * 7);
-      since = new Date(until); since.setDate(until.getDate() - 6);
-      label = offset === 0 ? 'Last 7 days' : `${_short(since)} – ${_short(until)}`;
+  function computeRange(period) {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const addDays = (d,n) => { const x=new Date(d); x.setDate(x.getDate()+n); return x; };
+    const range = (s,u,label) => ({ since:_fmt(s), until:_fmt(u), label });
+
+    if(period==='all') return {since:null,until:null,label:'All time'};
+    if(period==='today') return range(today,today,'Today');
+    if(period==='yesterday') { const d=addDays(today,-1); return range(d,d,'Yesterday'); }
+
+    if(period==='week'||period==='lastweek') {
+      const dow=today.getDay();
+      const monday=addDays(today,dow===0?-6:1-dow);
+      const start=period==='lastweek'?addDays(monday,-7):monday;
+      return range(start,addDays(start,6),period==='week'?'This week':'Last week');
     }
-    return { since: _fmt(since), until: _fmt(until), label, canNav: true };
+    if(period==='month'||period==='lastmonth') {
+      const start=new Date(today.getFullYear(),today.getMonth()+(period==='lastmonth'?-1:0),1);
+      const end=new Date(start.getFullYear(),start.getMonth()+1,0);
+      return range(start,end,start.toLocaleDateString('en-US',{month:'long',year:'numeric'}));
+    }
+    if(period==='year'||period==='lastyear') {
+      const year=today.getFullYear()+(period==='lastyear'?-1:0);
+      return range(new Date(year,0,1),new Date(year,11,31),String(year));
+    }
+    if(period==='last7'||period==='last30'||period==='last90'||period==='last365') {
+      const days=Number(period.replace('last',''));
+      return range(addDays(today,-(days-1)),today,`Last ${days} days`);
+    }
+    if(period==='custom') {
+      const s=document.getElementById('custom-since')?.value||'';
+      const u=document.getElementById('custom-until')?.value||'';
+      if(!s||!u||s>u) return {since:null,until:null,label:'Choose a valid date range'};
+      return {since:s,until:u,label:`${_short(new Date(s+'T00:00:00'))} – ${_short(new Date(u+'T00:00:00'))}`};
+    }
+    return {since:null,until:null,label:'All time'};
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -781,34 +786,32 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
 
   // ── Refresh ────────────────────────────────────────────────────────────────
   function refresh() {
-    const { since, until, label, canNav } = computeRange(currentPeriod, currentOffset);
-    const nav = document.getElementById('period-nav');
-    const periodLabel = document.getElementById('period-label');
-    const nextBtn = document.getElementById('next-btn');
-    const weekdayTitle = document.getElementById('weekday-chart-title');
-    if (nav) nav.style.display = canNav ? 'flex' : 'none';
-    if (periodLabel) periodLabel.textContent = label;
-    if (nextBtn) nextBtn.disabled = currentOffset >= 0;
-    if (weekdayTitle) {
-      const isWeekly = currentPeriod === 'week' || currentPeriod === 'last7';
-      weekdayTitle.textContent = isWeekly ? 'Activity by Day of Week' : 'Average Activity by Day of Week';
+    const { since, until, label } = computeRange(currentPeriod);
+    const custom=document.getElementById('custom-range');
+    const weekdayTitle=document.getElementById('weekday-chart-title');
+    if(custom) {
+      custom.classList.toggle('hidden', currentPeriod!=='custom');
+      custom.classList.toggle('flex', currentPeriod==='custom');
     }
-    loadStats(since, until);
+    if(weekdayTitle) {
+      const isWeekly=currentPeriod==='week'||currentPeriod==='lastweek'||currentPeriod==='last7';
+      weekdayTitle.textContent=isWeekly?'Activity by Day of Week':'Average Activity by Day of Week';
+    }
+    loadStats(since,until);
   }
 
   // ── Event listeners ────────────────────────────────────────────────────────
   document.getElementById('period-select').addEventListener('change', e => {
-    currentPeriod = e.target.value;
-    currentOffset = 0;
+    currentPeriod=e.target.value;
+    if(currentPeriod==='custom') {
+      const today=new Date();
+      const since=new Date(today); since.setDate(today.getDate()-29);
+      document.getElementById('custom-since').value=_fmt(since);
+      document.getElementById('custom-until').value=_fmt(today);
+    }
     refresh();
   });
-  document.getElementById('prev-btn').addEventListener('click', () => {
-    currentOffset--;
-    refresh();
-  });
-  document.getElementById('next-btn').addEventListener('click', () => {
-    if (currentOffset < 0) { currentOffset++; refresh(); }
-  });
+  document.getElementById('custom-apply').addEventListener('click',refresh);
 
   refresh();
 </script>
