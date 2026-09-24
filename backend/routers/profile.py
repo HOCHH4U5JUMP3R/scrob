@@ -5,7 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, U
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import func, case, or_
+from sqlalchemy import func, case, or_, and_
 from sqlalchemy.orm import aliased
 from datetime import date as DateType, timedelta as TimeDelta
 from typing import Optional
@@ -1353,7 +1353,6 @@ async def get_user_stats(
     # EXISTS also prevents multiple watch events from counting the same rating twice.
     rating_watch_filters = [
         WatchEvent.user_id == user_id,
-        WatchEvent.media_id == Rating.media_id,
         WatchEvent.completed == True,
         WatchEvent.watched_at.isnot(None),
     ]
@@ -1361,7 +1360,40 @@ async def get_user_stats(
         rating_watch_filters.append(WatchEvent.watched_at >= since)
     if until:
         rating_watch_filters.append(WatchEvent.watched_at < until + TimeDelta(days=1))
-    rating_in_watch_period = select(WatchEvent.id).where(*rating_watch_filters).exists()
+
+    # Movie/episode ratings point directly at the watched Media row.
+    direct_rating_watch = (
+        select(WatchEvent.id)
+        .where(
+            *rating_watch_filters,
+            WatchEvent.media_id == Rating.media_id,
+        )
+        .exists()
+    )
+
+    # Series ratings point at the series Media row, while watches are stored on
+    # episode Media rows. Match those episode watches back to the rated show.
+    rated_series = aliased(Media)
+    watched_episode = aliased(Media)
+    series_rating_watch = (
+        select(WatchEvent.id)
+        .join(watched_episode, WatchEvent.media_id == watched_episode.id)
+        .join(ShowModel, ShowModel.id == watched_episode.show_id)
+        .join(rated_series, rated_series.id == Rating.media_id)
+        .where(
+            *rating_watch_filters,
+            rated_series.media_type == "series",
+            watched_episode.media_type == "episode",
+            ShowModel.tmdb_id == rated_series.tmdb_id,
+            or_(
+                Rating.season_number.is_(None),
+                watched_episode.season_number == Rating.season_number,
+            ),
+        )
+        .exists()
+    )
+
+    rating_in_watch_period = or_(direct_rating_watch, series_rating_watch)
 
     rating_scope = [
         Rating.user_id == user_id,
