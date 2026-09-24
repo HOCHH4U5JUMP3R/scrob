@@ -1347,16 +1347,32 @@ async def get_user_stats(
         reverse=True,
     )[:10]
 
-    # ── Rating date filters mirror the watch event date filters but on rated_at
-    rating_date_filters = []
+    # Ratings belong to media, but statistics periods are based on when that media was watched.
+    # Use EXISTS so a rating is included when the rated media has a completed watch
+    # in the selected period, regardless of when the rating itself was entered.
+    # EXISTS also prevents multiple watch events from counting the same rating twice.
+    rating_watch_filters = [
+        WatchEvent.user_id == user_id,
+        WatchEvent.media_id == Rating.media_id,
+        WatchEvent.completed == True,
+        WatchEvent.watched_at.isnot(None),
+    ]
     if since:
-        rating_date_filters.append(Rating.rated_at >= since)
+        rating_watch_filters.append(WatchEvent.watched_at >= since)
     if until:
-        rating_date_filters.append(Rating.rated_at < until + TimeDelta(days=1))
+        rating_watch_filters.append(WatchEvent.watched_at < until + TimeDelta(days=1))
+    rating_in_watch_period = select(WatchEvent.id).where(*rating_watch_filters).exists()
+
+    rating_scope = [
+        Rating.user_id == user_id,
+        Rating.rating.isnot(None),
+    ]
+    if since or until:
+        rating_scope.append(rating_in_watch_period)
 
     rating_dist_q = await db.execute(
         select(Rating.rating, func.count(Rating.id).label("cnt"))
-        .where(Rating.user_id == user_id, Rating.rating.isnot(None), *rating_date_filters)
+        .where(*rating_scope)
         .group_by(Rating.rating)
         .order_by(Rating.rating)
     )
@@ -1367,7 +1383,7 @@ async def get_user_stats(
     avg_movie_rating_q = await db.execute(
         select(func.avg(Rating.rating))
         .join(Media, Rating.media_id == Media.id)
-        .where(Rating.user_id == user_id, Rating.rating.isnot(None), Media.media_type == "movie", *rating_date_filters)
+        .where(Rating.user_id == user_id, Media.media_type == "movie", *rating_scope)
     )
     avg_movie_rating = avg_movie_rating_q.scalar_one()
     avg_movie_rating = round(float(avg_movie_rating), 2) if avg_movie_rating else None
@@ -1375,7 +1391,7 @@ async def get_user_stats(
     avg_show_rating_q = await db.execute(
         select(func.avg(Rating.rating))
         .join(Media, Rating.media_id == Media.id)
-        .where(Rating.user_id == user_id, Rating.rating.isnot(None), Media.media_type == "series", *rating_date_filters)
+        .where(Rating.user_id == user_id, Media.media_type == "series", *rating_scope)
     )
     avg_show_rating = avg_show_rating_q.scalar_one()
     avg_show_rating = round(float(avg_show_rating), 2) if avg_show_rating else None
