@@ -1371,29 +1371,12 @@ async def get_user_stats(
         .exists()
     )
 
-    # Series ratings point at the series Media row, while watches are stored on
-    # episode Media rows. Match those episode watches back to the rated show.
-    rated_series = aliased(Media)
-    watched_episode = aliased(Media)
-    series_rating_watch = (
-        select(WatchEvent.id)
-        .join(watched_episode, WatchEvent.media_id == watched_episode.id)
-        .join(ShowModel, ShowModel.id == watched_episode.show_id)
-        .join(rated_series, rated_series.id == Rating.media_id)
-        .where(
-            *rating_watch_filters,
-            rated_series.media_type == "series",
-            watched_episode.media_type == "episode",
-            ShowModel.tmdb_id == rated_series.tmdb_id,
-            or_(
-                Rating.season_number.is_(None),
-                watched_episode.season_number == Rating.season_number,
-            ),
-        )
-        .exists()
-    )
-
-    rating_in_watch_period = or_(direct_rating_watch, series_rating_watch)
+    # Ratings are tied to the exact Media item that was rated. In particular,
+    # a series rating must NOT become part of a period merely because an
+    # episode of that series was watched in the period. Episode ratings are
+    # tied to the episode Media row and therefore only count when that exact
+    # episode was watched in the selected period.
+    rating_in_watch_period = direct_rating_watch
 
     rating_scope = [
         Rating.user_id == user_id,
