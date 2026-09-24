@@ -5,7 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, U
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import func, case, or_
+from sqlalchemy import func, case, or_, and_
 from sqlalchemy.orm import aliased
 from datetime import date as DateType, timedelta as TimeDelta
 from typing import Optional
@@ -1351,9 +1351,14 @@ async def get_user_stats(
     # Use EXISTS so a rating is included when the rated media has a completed watch
     # in the selected period, regardless of when the rating itself was entered.
     # EXISTS also prevents multiple watch events from counting the same rating twice.
+    # Ratings can belong either to a movie or to a series-level Media row.
+    # Series ratings are attached to the show's series Media, while watches are
+    # recorded against episode Media rows. Correlate those episode watches back
+    # to the rated series by TMDB show id, and respect season-specific ratings.
+    rated_media = aliased(Media)
+    watched_media = aliased(Media)
     rating_watch_filters = [
         WatchEvent.user_id == user_id,
-        WatchEvent.media_id == Rating.media_id,
         WatchEvent.completed == True,
         WatchEvent.watched_at.isnot(None),
     ]
@@ -1361,7 +1366,33 @@ async def get_user_stats(
         rating_watch_filters.append(WatchEvent.watched_at >= since)
     if until:
         rating_watch_filters.append(WatchEvent.watched_at < until + TimeDelta(days=1))
-    rating_in_watch_period = select(WatchEvent.id).where(*rating_watch_filters).exists()
+
+    direct_rating_watch = WatchEvent.media_id == Rating.media_id
+    series_rating_watch = (
+        rated_media.id == Rating.media_id,
+        rated_media.media_type == "series",
+        watched_media.media_type == "episode",
+        watched_media.show_id.isnot(None),
+        ShowModel.id == watched_media.show_id,
+        ShowModel.tmdb_id == rated_media.tmdb_id,
+        or_(
+            Rating.season_number.is_(None),
+            watched_media.season_number == Rating.season_number,
+        ),
+    )
+    rating_in_watch_period = (
+        select(WatchEvent.id)
+        .join(watched_media, WatchEvent.media_id == watched_media.id)
+        .join(ShowModel, ShowModel.id == watched_media.show_id)
+        .where(
+            *rating_watch_filters,
+            or_(
+                direct_rating_watch,
+                and_(*series_rating_watch),
+            ),
+        )
+        .exists()
+    )
 
     rating_scope = [
         Rating.user_id == user_id,
