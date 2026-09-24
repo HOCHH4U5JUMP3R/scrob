@@ -1406,7 +1406,7 @@ async def get_user_stats(
     avg_show_rating_q = await db.execute(
         select(func.avg(Rating.rating))
         .join(Media, Rating.media_id == Media.id)
-        .where(Rating.user_id == user_id, Media.media_type == "series", *rating_scope)
+        .where(Rating.user_id == user_id, Media.media_type == "episode", *rating_scope)
     )
     avg_show_rating = avg_show_rating_q.scalar_one()
     avg_show_rating = round(float(avg_show_rating), 2) if avg_show_rating else None
