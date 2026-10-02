@@ -63,9 +63,9 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
       </div>
 
       <!-- Watching Statistics -->
-      <section>
-        <div class="flex items-center justify-between gap-4 flex-wrap mb-6">
-          <h2 class="section-headline">Watching</h2>
+      <section class="stats-section">
+        <div class="flex items-center justify-between gap-4 flex-wrap mb-5">
+          <div><h2 class="section-headline">Watching</h2><p class="text-xs text-zinc-600 mt-1">Activity, watch time and ratings</p></div>
           <div class="flex items-center gap-2">
             <div class="flex items-center gap-2 flex-wrap justify-end">
               <select id="period-select" class="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm font-bold rounded-xl px-3 py-2 cursor-pointer hover:border-zinc-500 transition focus:outline-none">
@@ -226,6 +226,54 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
     </div>
   )}
 </Base>
+
+<style>
+/* PR39: Floppy-inspired statistics presentation. Data/API semantics remain unchanged. */
+.stats-page { --stats-border: rgba(63,63,70,.72); }
+.stats-page .stats-section > .grid > div,
+.stats-page #top-stats > .space-y-6 > div,
+.stats-page section:last-of-type > .grid > div {
+  background: linear-gradient(145deg, rgba(24,24,27,.78), rgba(18,18,21,.58));
+  border-color: var(--stats-border);
+  box-shadow: 0 18px 50px rgba(0,0,0,.14);
+  transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease;
+}
+.stats-page .stats-section > .grid > div:hover,
+.stats-page #top-stats > .space-y-6 > div:hover,
+.stats-page section:last-of-type > .grid > div:hover {
+  border-color: rgba(82,82,91,.95);
+  box-shadow: 0 22px 60px rgba(0,0,0,.20);
+}
+.stats-page #summary-row > div {
+  position: relative; overflow: hidden; min-height: 112px; display:flex; flex-direction:column;
+  justify-content:center; text-align:left; padding:1.15rem 1.25rem;
+  background:linear-gradient(145deg,rgba(30,41,59,.62),rgba(24,24,27,.72));
+  border-color:rgba(63,63,70,.78);
+}
+.stats-page #summary-row > div::after {
+  content:""; position:absolute; width:90px; height:90px; right:-32px; top:-38px;
+  border-radius:999px; background:rgba(14,165,233,.08);
+}
+.stats-page #summary-row p:first-child { font-size:1.9rem; line-height:1; position:relative; z-index:1; }
+.stats-page #summary-row p:last-child { margin-top:.55rem; letter-spacing:.14em; }
+.stats-page #period-select {
+  min-width:150px; background:rgba(24,24,27,.9); border-color:rgba(63,63,70,.9);
+  box-shadow:0 10px 30px rgba(0,0,0,.12);
+}
+.stats-page #custom-range { background:rgba(24,24,27,.75); padding:.25rem; border-radius:.9rem; }
+.stats-page #activity-chart,.stats-page #watch-time-chart,.stats-page #rating-chart,.stats-page #weekday-chart { min-height:150px; }
+.stats-page .group-label { font-size:.68rem; letter-spacing:.16em; }
+.stats-page #watch-time-breakdown > div,.stats-page #avg-ratings > div,.stats-page #collection-breakdown > div {
+  background:rgba(39,39,42,.45); border:1px solid rgba(63,63,70,.45);
+}
+.stats-page #top-stats { margin-top:.5rem; }
+.stats-page section:last-of-type { padding-top:.5rem; }
+@media (max-width:767px) {
+  .stats-page { padding-bottom:1rem; }
+  .stats-page #summary-row > div { min-height:96px; padding:1rem; }
+  .stats-page #summary-row p:first-child { font-size:1.55rem; }
+}
+</style>
 
 <script define:vars={{ userId: id, token, isOwnStats }}>
   // ── State ──────────────────────────────────────────────────────────────────
