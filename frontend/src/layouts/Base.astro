@@ -2,7 +2,8 @@
 import "../styles/global.css";
 import logo from "../assets/scrob.png";
 import WatchedAtPicker from "../components/WatchedAtPicker.astro";
-import { api } from "../lib/api";\nimport Sidebar from "../components/Sidebar.astro";
+import { api } from "../lib/api";
+import Sidebar from "../components/Sidebar.astro";
 
 interface Props { title: string; hideNav?: boolean }
 const { title, hideNav } = Astro.props;
@@ -135,7 +136,8 @@ const bottomNavItem = (active: boolean) =>
     })();
   </script>
 </head>
-<body class="bg-zinc-950 text-zinc-100 min-h-screen overflow-x-hidden">\n  <Sidebar user={user} showAnonNavLinks={showAnonNavLinks} pathname={pathname} pendingRequestCount={pendingRequestCount} />
+<body class="bg-zinc-950 text-zinc-100 min-h-screen overflow-x-hidden">
+  <Sidebar user={user} showAnonNavLinks={showAnonNavLinks} pathname={pathname} pendingRequestCount={pendingRequestCount} />
   {!hideNav && (
     <nav class="px-4 md:px-6 py-3 md:py-4 text-sm relative z-30 bg-zinc-950 md:bg-transparent md:ml-64">
       <!-- Default bar -->
