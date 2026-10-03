@@ -1,36 +1,181 @@
 ---
 import Base from "../../layouts/Base.astro";
 export const prerender = false;
+
 const { id } = Astro.params;
 const { token } = Astro.locals;
 let game: any = null;
 let error = "";
+
 try {
-  const res = await fetch(`http://localhost:${import.meta.env.BACKEND_PORT ?? "7331"}/games/${id}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  const res = await fetch(
+    `http://localhost:${import.meta.env.BACKEND_PORT ?? "7331"}/games/${id}`,
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+  );
   if (res.ok) game = await res.json();
   else error = res.status === 404 ? "Game not found." : "Failed to load game.";
-} catch { error = "Failed to load game."; }
+} catch {
+  error = "Failed to load game.";
+}
+
+const stats = game?.stats ?? [];
+const playtime = stats.reduce((sum: number, s: any) => sum + (s.playtime_minutes || 0), 0);
+const playCount = stats.reduce((sum: number, s: any) => sum + (s.play_count || 0), 0);
+const trophyEarned = stats.reduce((sum: number, s: any) => {
+  const t = s.trophies_earned || {};
+  return sum + Object.values(t).reduce((n: number, v: any) => n + (Number(v) || 0), 0);
+}, 0);
+const trophyDefined = stats.reduce((sum: number, s: any) => {
+  const t = s.trophies_defined || {};
+  return sum + Object.values(t).reduce((n: number, v: any) => n + (Number(v) || 0), 0);
+}, 0);
+
+const trophyValue = (t: any, key: string) => Number(t?.[key] ?? t?.[key.toLowerCase()] ?? 0);
+const formatMinutes = (minutes: number) => {
+  if (!minutes) return "0 min";
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return hours ? `${hours}h ${mins}m` : `${mins}m`;
+};
+const formatDate = (value: string | null) => {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("de-DE", { dateStyle: "medium" }).format(new Date(value));
+};
+const latestPlayed = stats
+  .map((s: any) => s.last_played_at)
+  .filter(Boolean)
+  .sort()
+  .at(-1);
 ---
+
 <Base title={game?.title ?? "Game"}>
   {error ? (
-    <div class="max-w-md mx-auto mt-20 text-center"><div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-10"><h1 class="text-xl font-black">{error}</h1><a href="/games" class="inline-block mt-6 px-5 py-2.5 rounded-xl bg-sky-600 text-white font-bold">Back to Games</a></div></div>
+    <div class="max-w-md mx-auto mt-20 text-center">
+      <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-10">
+        <h1 class="text-xl font-black">{error}</h1>
+        <a href="/games" class="inline-block mt-6 px-5 py-2.5 rounded-xl bg-sky-600 text-white font-bold">Back to Games</a>
+      </div>
+    </div>
   ) : game ? (
     <div class="relative min-h-[calc(100vh-5rem)]">
-      {game.backdrop_path && <div class="absolute inset-x-0 top-0 h-[45vh] overflow-hidden opacity-35"><img src={game.backdrop_path} alt="" class="w-full h-full object-cover"/><div class="absolute inset-0 bg-gradient-to-b from-zinc-950/30 via-zinc-950/80 to-zinc-950"/></div>}
-      <div class="relative max-w-6xl mx-auto px-4 sm:px-6 py-8 md:py-14">
-        <a href="/games" class="text-xs font-black uppercase tracking-widest text-zinc-500 hover:text-zinc-200">← Games</a>
-        <div class="grid md:grid-cols-[220px_1fr] gap-8 md:gap-10 pt-8">
-          <div>{game.cover_path ? <img src={game.cover_path} alt={game.title} class="w-full rounded-2xl shadow-2xl border border-zinc-800"/> : <div class="aspect-[2/3] rounded-2xl bg-zinc-900 border border-zinc-800"/>}</div>
-          <div class="self-center"><p class="text-[10px] font-black uppercase tracking-[.2em] text-sky-400">Game</p><h1 class="text-4xl md:text-6xl font-black tracking-tight text-white mt-2">{game.title}</h1>
+      {game.backdrop_path && (
+        <div class="absolute inset-x-0 top-0 h-[48vh] overflow-hidden opacity-40">
+          <img src={game.backdrop_path} alt="" class="w-full h-full object-cover" />
+          <div class="absolute inset-0 bg-gradient-to-b from-zinc-950/20 via-zinc-950/75 to-zinc-950" />
+        </div>
+      )}
+
+      <div class="relative max-w-6xl mx-auto px-4 sm:px-6 py-8 md:py-12">
+        <a href="/games" class="inline-flex items-center gap-2 text-xs font-black uppercase tracking-widest text-zinc-500 hover:text-zinc-200">← Games</a>
+
+        <div class="grid md:grid-cols-[240px_1fr] gap-8 md:gap-10 pt-7">
+          <div>
+            {game.cover_path ? (
+              <img src={game.cover_path} alt={game.title} class="w-full rounded-2xl shadow-2xl border border-zinc-800" />
+            ) : (
+              <div class="aspect-[2/3] rounded-2xl bg-zinc-900 border border-zinc-800" />
+            )}
+          </div>
+
+          <div class="self-center">
+            <p class="text-[10px] font-black uppercase tracking-[.2em] text-sky-400">Game</p>
+            <h1 class="text-4xl md:text-6xl font-black tracking-tight text-white mt-2">{game.title}</h1>
             {game.original_title && game.original_title !== game.title && <p class="text-zinc-500 mt-2">{game.original_title}</p>}
+
             <div class="flex flex-wrap gap-2 mt-5">
-              {game.release_date && <span class="px-3 py-1.5 rounded-full bg-zinc-900/80 border border-zinc-800 text-xs font-bold text-zinc-300">{game.release_date.slice(0,4)}</span>}
-              {game.genres?.map((g:string) => <span class="px-3 py-1.5 rounded-full bg-zinc-900/80 border border-zinc-800 text-xs font-bold text-zinc-400">{g}</span>)}
-              {game.platforms?.map((p:any) => <span class="px-3 py-1.5 rounded-full bg-sky-500/10 border border-sky-500/20 text-xs font-black text-sky-300">{p.platform_name || p.platform}</span>)}
+              {game.release_date && <span class="px-3 py-1.5 rounded-full bg-zinc-900/80 border border-zinc-800 text-xs font-bold text-zinc-300">{game.release_date.slice(0, 4)}</span>}
+              {game.genres?.map((g: string) => <span class="px-3 py-1.5 rounded-full bg-zinc-900/80 border border-zinc-800 text-xs font-bold text-zinc-400">{g}</span>)}
+              {game.platforms?.map((p: any) => <span class="px-3 py-1.5 rounded-full bg-sky-500/10 border border-sky-500/20 text-xs font-black text-sky-300">{p.platform_name || p.platform}</span>)}
             </div>
+
             {game.overview && <p class="max-w-3xl text-zinc-300 leading-7 mt-7">{game.overview}</p>}
           </div>
         </div>
+
+        {stats.length > 0 && (
+          <section class="mt-12">
+            <div class="flex items-end justify-between gap-4 mb-4">
+              <div>
+                <p class="text-[10px] font-black uppercase tracking-[.2em] text-sky-400">Your activity</p>
+                <h2 class="text-2xl font-black text-white mt-1">Play statistics</h2>
+              </div>
+              <span class="text-xs text-zinc-500">{stats.length} platform{stats.length === 1 ? "" : "s"}</span>
+            </div>
+
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div class="rounded-2xl border border-zinc-800 bg-zinc-900/75 p-5">
+                <p class="text-xs font-bold text-zinc-500">Play time</p>
+                <p class="text-2xl font-black text-white mt-2">{formatMinutes(playtime)}</p>
+              </div>
+              <div class="rounded-2xl border border-zinc-800 bg-zinc-900/75 p-5">
+                <p class="text-xs font-bold text-zinc-500">Play count</p>
+                <p class="text-2xl font-black text-white mt-2">{playCount}</p>
+              </div>
+              <div class="rounded-2xl border border-zinc-800 bg-zinc-900/75 p-5">
+                <p class="text-xs font-bold text-zinc-500">Last played</p>
+                <p class="text-lg font-black text-white mt-2">{formatDate(latestPlayed)}</p>
+              </div>
+              <div class="rounded-2xl border border-zinc-800 bg-zinc-900/75 p-5">
+                <p class="text-xs font-bold text-zinc-500">Trophies</p>
+                <p class="text-2xl font-black text-white mt-2">{trophyEarned}{trophyDefined ? <span class="text-sm text-zinc-500"> / {trophyDefined}</span> : null}</p>
+              </div>
+            </div>
+
+            <div class="grid lg:grid-cols-2 gap-4 mt-4">
+              {stats.map((s: any) => {
+                const earned = s.trophies_earned || {};
+                const defined = s.trophies_defined || {};
+                const progress = Math.max(0, Math.min(100, Number(s.trophy_progress || 0)));
+                const bronze = trophyValue(earned, "bronze");
+                const silver = trophyValue(earned, "silver");
+                const gold = trophyValue(earned, "gold");
+                const platinum = trophyValue(earned, "platinum");
+                return (
+                  <div class="rounded-2xl border border-zinc-800 bg-zinc-900/75 p-5">
+                    <div class="flex items-center justify-between gap-4">
+                      <div>
+                        <p class="text-xs font-black uppercase tracking-wider text-sky-400">{s.platform}</p>
+                        <p class="text-sm text-zinc-400 mt-1">{formatMinutes(s.playtime_minutes || 0)} · {s.play_count || 0} plays</p>
+                      </div>
+                      <p class="text-2xl font-black text-white">{progress}%</p>
+                    </div>
+
+                    <div class="h-2 bg-zinc-800 rounded-full overflow-hidden mt-5">
+                      <div class="h-full bg-sky-500 rounded-full" style={`width: ${progress}%`} />
+                    </div>
+
+                    <div class="grid grid-cols-4 gap-2 mt-5">
+                      <div class="rounded-xl bg-zinc-950/70 p-3 text-center">
+                        <p class="text-xs font-black text-amber-700">Bronze</p>
+                        <p class="text-lg font-black text-white mt-1">{bronze}<span class="text-xs text-zinc-600">/{trophyValue(defined, "bronze")}</span></p>
+                      </div>
+                      <div class="rounded-xl bg-zinc-950/70 p-3 text-center">
+                        <p class="text-xs font-black text-zinc-300">Silver</p>
+                        <p class="text-lg font-black text-white mt-1">{silver}<span class="text-xs text-zinc-600">/{trophyValue(defined, "silver")}</span></p>
+                      </div>
+                      <div class="rounded-xl bg-zinc-950/70 p-3 text-center">
+                        <p class="text-xs font-black text-yellow-400">Gold</p>
+                        <p class="text-lg font-black text-white mt-1">{gold}<span class="text-xs text-zinc-600">/{trophyValue(defined, "gold")}</span></p>
+                      </div>
+                      <div class="rounded-xl bg-zinc-950/70 p-3 text-center">
+                        <p class="text-xs font-black text-sky-300">Platinum</p>
+                        <p class="text-lg font-black text-white mt-1">{platinum}<span class="text-xs text-zinc-600">/{trophyValue(defined, "platinum")}</span></p>
+                      </div>
+                    </div>
+
+                    <p class="text-xs text-zinc-600 mt-4">Last played: {formatDate(s.last_played_at)}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {stats.length === 0 && (
+          <div class="mt-10 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6">
+            <p class="text-sm text-zinc-400">No PlayStation or Xbox activity has been synced for this game yet.</p>
+          </div>
+        )}
       </div>
     </div>
   ) : null}
