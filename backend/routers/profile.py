@@ -1387,7 +1387,11 @@ async def get_user_stats(
 
     rating_dist_q = await db.execute(
         select(Rating.rating, func.count(Rating.id).label("cnt"))
-        .where(*rating_scope)
+        .join(Media, Rating.media_id == Media.id)
+        .where(
+            *rating_scope,
+            Media.media_type.in_(["movie", "episode"]),
+        )
         .group_by(Rating.rating)
         .order_by(Rating.rating)
     )
