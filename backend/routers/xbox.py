@@ -2,14 +2,16 @@ import asyncio
 import logging
 import secrets
 from datetime import datetime
+from urllib.parse import parse_qs, urlparse
+
+from pydantic import BaseModel
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from core.xbox import authorization_url, exchange_code, fetch_library, is_configured
+from core.xbox import authorization_url, exchange_code, fetch_library
 from db import get_db
 from dependencies import get_current_user
 from models.games import Game, GamePlatform, GameUserStats
@@ -17,6 +19,10 @@ from models.users import User, UserSettings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+class XboxAuthCompletion(BaseModel):
+    code_or_url: str
 
 
 async def _get_settings(db: AsyncSession, user_id: int) -> UserSettings:
@@ -37,7 +43,7 @@ async def xbox_status(
 ):
     settings = await _get_settings(db, current_user.id)
     return {
-        "configured": bool(settings.xbox_client_state or settings.xbox_oauth_token),
+        "configured": True,
         "connected": bool(settings.xbox_oauth_token),
         "xuid": settings.xbox_xuid,
         "gamertag": settings.xbox_gamertag,
@@ -66,24 +72,47 @@ async def xbox_authorize(
         raise HTTPException(status_code=503, detail=str(exc))
 
 
-@router.get("/callback")
-async def xbox_callback(
-    code: str = Query(...),
-    state: str = Query(...),
+@router.post("/complete")
+async def xbox_complete(
+    payload: XboxAuthCompletion,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(select(UserSettings).where(UserSettings.xbox_oauth_state == state))
+    result = await db.execute(
+        select(UserSettings).where(UserSettings.user_id == current_user.id)
+    )
     settings = result.scalar_one_or_none()
-    if not settings:
-        raise HTTPException(status_code=400, detail="Invalid or expired Xbox OAuth state.")
+    if not settings or not settings.xbox_oauth_state:
+        raise HTTPException(status_code=400, detail="No pending Xbox authentication.")
 
-    settings.xbox_oauth_state = None
+    value = payload.code_or_url.strip()
+    code = value
+    returned_state = None
+
+    try:
+        parsed = urlparse(value)
+        if parsed.query:
+            params = parse_qs(parsed.query)
+            code = params.get("code", [None])[0]
+            returned_state = params.get("state", [None])[0]
+    except ValueError:
+        pass
+
+    if not code:
+        raise HTTPException(status_code=400, detail="No Xbox authorization code found.")
+
+    if returned_state and returned_state != settings.xbox_oauth_state:
+        raise HTTPException(status_code=400, detail="Invalid Xbox OAuth state.")
+
     try:
         oauth = await exchange_code(code)
         settings.xbox_oauth_token = oauth.model_dump_json()
+        settings.xbox_oauth_state = None
+        settings.xbox_last_sync_error = None
         await db.commit()
     except Exception as exc:
         logger.warning("Xbox authentication failed: %s", exc)
+        settings.xbox_oauth_state = None
         settings.xbox_oauth_token = None
         settings.xbox_last_sync_error = f"Xbox authentication failed: {type(exc).__name__}: {exc}"
         await db.commit()
@@ -92,7 +121,7 @@ async def xbox_callback(
             detail=f"Xbox authentication failed: {type(exc).__name__}: {exc}",
         )
 
-    return RedirectResponse(url="/connections?xbox=connected", status_code=303)
+    return {"status": "connected"}
 
 
 @router.delete("/disconnect")

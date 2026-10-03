@@ -71,11 +71,23 @@ const { token } = Astro.locals;
         Connect your Microsoft account to import Xbox game history, playtime and achievement progress.
       </p>
 
-      <div id="xbox-connect-form" class="mt-4">
+      <div id="xbox-connect-form" class="mt-4 space-y-3">
         <button id="xbox-connect-btn" type="button"
           class="w-full px-4 py-3 rounded-xl bg-zinc-100 text-zinc-950 font-black text-sm hover:bg-white disabled:opacity-50">
           Connect Xbox
         </button>
+        <div id="xbox-complete-form" class="hidden space-y-2">
+          <p class="text-xs text-zinc-500">
+            After signing in, Microsoft redirects to localhost. Copy the complete URL from the browser address bar and paste it here.
+          </p>
+          <input id="xbox-code" type="text" autocomplete="off"
+            placeholder="Paste the Microsoft redirect URL or authorization code"
+            class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-500" />
+          <button id="xbox-complete-btn" type="button"
+            class="w-full px-4 py-3 rounded-xl bg-sky-500 text-white font-black text-sm hover:bg-sky-400 disabled:opacity-50">
+            Complete Xbox connection
+          </button>
+        </div>
       </div>
 
       <div id="xbox-connected-actions" class="hidden mt-4 flex items-center gap-2 flex-wrap">
@@ -92,7 +104,7 @@ const { token } = Astro.locals;
       <p id="xbox-message" class="hidden mt-3 text-xs"></p>
       <p id="xbox-sync-status" class="text-[11px] text-zinc-600 mt-3"></p>
       <p class="text-[11px] text-zinc-600 mt-4">
-        Authentication is handled by Microsoft; Scrob stores the OAuth refresh token for future syncs.
+        No Azure or Entra setup is required. Sign in with Microsoft and Scrob stores the OAuth token for future syncs.
       </p>
     </article>
 
@@ -139,6 +151,8 @@ const { token } = Astro.locals;
   const xboxActions = document.getElementById("xbox-connected-actions");
   const xboxMessage = document.getElementById("xbox-message");
   const xboxSyncStatus = document.getElementById("xbox-sync-status");
+  const xboxCompleteForm = document.getElementById("xbox-complete-form");
+  const xboxCode = document.getElementById("xbox-code");
 
   const setXboxMessage = (value, error = false) => {
     xboxMessage.textContent = value;
@@ -153,9 +167,9 @@ const { token } = Astro.locals;
       const data = await res.json();
 
       if (!data.connected) {
-        xboxBadge.textContent = data.configured ? "Ready" : "Not configured";
+        xboxBadge.textContent = "Ready";
         xboxBadge.className = "px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-500 text-[10px] font-black uppercase tracking-wider";
-        xboxStatus.textContent = data.configured ? "Not connected" : "Server configuration missing";
+        xboxStatus.textContent = "Not connected";
         xboxForm.classList.remove("hidden");
         xboxActions.classList.add("hidden");
         return;
@@ -190,11 +204,42 @@ const { token } = Astro.locals;
 
     try {
       const res = await api("/xbox/authorize");
-      if (!res.ok) throw new Error(await readError(res, "Xbox authentication is not configured."));
+      if (!res.ok) throw new Error(await readError(res, "Could not start Xbox authentication."));
       const data = await res.json();
-      window.location.href = data.authorization_url;
+      window.open(data.authorization_url, "_blank", "noopener,noreferrer");
+      xboxCompleteForm.classList.remove("hidden");
+      setXboxMessage("Sign in in the new tab, then paste the redirect URL here.");
     } catch (error) {
       setXboxMessage(error?.message || "Xbox authentication failed.", true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  document.getElementById("xbox-complete-btn")?.addEventListener("click", async () => {
+    const button = document.getElementById("xbox-complete-btn");
+    const value = xboxCode.value.trim();
+    if (!value) {
+      setXboxMessage("Paste the Microsoft redirect URL or authorization code first.", true);
+      return;
+    }
+
+    button.disabled = true;
+    setXboxMessage("Completing Xbox authentication…");
+
+    try {
+      const res = await api("/xbox/complete", {
+        method: "POST",
+        body: JSON.stringify({ code_or_url: value }),
+      });
+      if (!res.ok) throw new Error(await readError(res, "Xbox authentication failed."));
+      xboxCode.value = "";
+      xboxCompleteForm.classList.add("hidden");
+      setXboxMessage("Xbox connected. You can now sync your games.");
+      await refreshXboxStatus();
+    } catch (error) {
+      setXboxMessage(error?.message || "Xbox authentication failed.", true);
+    } finally {
       button.disabled = false;
     }
   });
