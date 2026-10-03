@@ -75,30 +75,30 @@ def fetch_library(npsso: str) -> dict:
     trophy_error = None
     try:
         for title in client.trophy_titles(limit=100):
-        title_id = title.np_title_id
-        # Some trophy responses do not expose np_title_id. In that case the
-        # communication id is still stable and useful as the external identity.
-        external_id = title_id or title.np_communication_id
-        if not external_id:
-            continue
+            title_id = title.np_title_id
+            # Some trophy responses do not expose np_title_id. In that case the
+            # communication id is still stable and useful as the external identity.
+            external_id = title_id or title.np_communication_id
+            if not external_id:
+                continue
 
-        platforms = sorted(getattr(p, "value", str(p)) for p in (title.title_platform or []))
-        platform_name = ", ".join(
-            {"ps3": "PlayStation 3", "ps4": "PlayStation 4", "psvita": "PlayStation Vita",
-             "ps5": "PlayStation 5", "pspc": "PlayStation PC"}.get(p.lower(), p)
-            for p in platforms
-        ) or "PlayStation"
+            platforms = sorted(getattr(p, "value", str(p)) for p in (title.title_platform or []))
+            platform_name = ", ".join(
+                {"ps3": "PlayStation 3", "ps4": "PlayStation 4", "psvita": "PlayStation Vita",
+                 "ps5": "PlayStation 5", "pspc": "PlayStation PC"}.get(p.lower(), p)
+                for p in platforms
+            ) or "PlayStation"
 
-        trophies[external_id] = {
-            "title_id": external_id,
-            "title": title.title_name,
-            "cover_path": title.title_icon_url,
-            "platform_name": platform_name,
-            "trophy_progress": title.progress,
-            "trophies_earned": _trophy_set(title.earned_trophies),
-            "trophies_defined": _trophy_set(title.defined_trophies),
-            "last_updated_at": _dt(title.last_updated_datetime),
-        }
+            trophies[external_id] = {
+                "title_id": external_id,
+                "title": title.title_name,
+                "cover_path": title.title_icon_url,
+                "platform_name": platform_name,
+                "trophy_progress": title.progress,
+                "trophies_earned": _trophy_set(title.earned_trophies),
+                "trophies_defined": _trophy_set(title.defined_trophies),
+                "last_updated_at": _dt(title.last_updated_datetime),
+            }
     except Exception as exc:
         trophy_error = exc
         logger.warning("PSN trophy titles request failed: %s", exc)
