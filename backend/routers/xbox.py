@@ -4,7 +4,7 @@ import secrets
 from datetime import datetime
 from urllib.parse import parse_qs, urlparse
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, update
@@ -21,6 +21,10 @@ from db import async_sessionmaker, engine
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+class XboxAutoSyncRequest(BaseModel):
+    interval: float | None = Field(default=None, ge=0.25, le=48)
 
 
 class XboxAuthCompletion(BaseModel):
@@ -124,6 +128,20 @@ async def xbox_complete(
         )
 
     return {"status": "connected"}
+
+
+@router.post("/auto-sync")
+async def xbox_auto_sync(
+    payload: XboxAutoSyncRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    settings = await _get_settings(db, current_user.id)
+    if payload.interval is not None and not settings.xbox_oauth_token:
+        raise HTTPException(status_code=400, detail="Xbox is not connected.")
+    settings.xbox_auto_sync_interval = payload.interval
+    await db.commit()
+    return {"auto_sync_interval": settings.xbox_auto_sync_interval}
 
 
 @router.delete("/disconnect")
