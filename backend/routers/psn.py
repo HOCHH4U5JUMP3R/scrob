@@ -87,25 +87,35 @@ async def psn_connect(
     current_user: User = Depends(get_current_user),
 ):
     npsso = payload.npsso.strip()
+    # Connection validation deliberately does not fetch the complete game
+    # library. The library endpoints can be large and occasionally rate-limit
+    # independently of authentication. A successful connection should therefore
+    # only prove that the NPSSO can authenticate; syncing is a separate action.
     try:
-        data = await asyncio.to_thread(fetch_library, npsso)
+        from psnawp_api import PSNAWP
+
+        client = await asyncio.to_thread(lambda: PSNAWP(npsso).me())
+        online_id = client.online_id
+        account_id = client.account_id
     except Exception as exc:
-        logger.warning("PSN connection failed for user %s: %s", current_user.id, exc)
-        raise HTTPException(status_code=400, detail="PlayStation authentication failed. Check the NPSSO token and try again.")
+        logger.warning("PSN authentication failed for user %s: %s", current_user.id, exc)
+        raise HTTPException(
+            status_code=400,
+            detail=f"PlayStation authentication failed: {type(exc).__name__}: {exc}",
+        )
 
     settings = await _get_settings(db, current_user.id)
     settings.psn_npsso = npsso
-    settings.psn_online_id = data["online_id"]
-    settings.psn_account_id = data["account_id"]
+    settings.psn_online_id = online_id
+    settings.psn_account_id = account_id
     settings.psn_connected_at = settings.psn_connected_at or datetime.utcnow()
     settings.psn_last_sync_error = None
     await db.commit()
 
     return {
         "status": "connected",
-        "online_id": data["online_id"],
-        "account_id": data["account_id"],
-        "games_found": len(data["games"]),
+        "online_id": online_id,
+        "account_id": account_id,
     }
 
 
@@ -139,7 +149,7 @@ async def psn_sync(
         data = await asyncio.to_thread(fetch_library, settings.psn_npsso)
     except Exception as exc:
         logger.warning("PSN sync failed for user %s: %s", current_user.id, exc)
-        settings.psn_last_sync_error = "PlayStation sync failed. Your NPSSO may have expired; reconnect PlayStation and try again."
+        settings.psn_last_sync_error = f"PlayStation sync failed: {type(exc).__name__}: {exc}"
         await db.commit()
         raise HTTPException(status_code=400, detail=settings.psn_last_sync_error)
 
