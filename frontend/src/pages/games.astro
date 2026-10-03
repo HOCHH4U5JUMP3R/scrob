@@ -59,19 +59,35 @@ function playtimeFor(game: any, section: PlatformKey): number | null {
   return times.reduce((sum: number, value: number) => sum + value, 0);
 }
 
+type SortMode = "recent" | "playtime" | "title";
+const sortMode = (Astro.url.searchParams.get("sort") as SortMode) || "recent";
+const SORT_OPTIONS: { value: SortMode; label: string }[] = [
+  { value: "recent", label: "Zuletzt gespielt" },
+  { value: "playtime", label: "Längste Spieldauer" },
+  { value: "title", label: "Titel" },
+];
+
+function lastPlayedFor(game: any, section: PlatformKey): number | null {
+  const dates = (game.stats ?? []).filter((s: any) => platformKey(s.platform) === section).map((s: any) => Date.parse(String(s.last_played_at ?? ""))).filter((value: number) => Number.isFinite(value));
+  return dates.length ? Math.max(...dates) : null;
+}
+
 function sortGames(list: any[], section: PlatformKey): any[] {
   return [...list].sort((a, b) => {
-    const aTime = playtimeFor(a, section);
-    const bTime = playtimeFor(b, section);
-
-    if (aTime == null && bTime != null) return 1;
-    if (aTime != null && bTime == null) return -1;
-    if (aTime != null && bTime != null && aTime !== bTime) return bTime - aTime;
-
-    return String(a.title ?? "").localeCompare(String(b.title ?? ""), undefined, {
-      sensitivity: "base",
-      numeric: true,
-    });
+    if (sortMode === "title") return String(a.title ?? "").localeCompare(String(b.title ?? ""), undefined, { sensitivity: "base", numeric: true });
+    if (sortMode === "recent") {
+      const aRecent = lastPlayedFor(a, section); const bRecent = lastPlayedFor(b, section);
+      if (aRecent == null && bRecent != null) return 1;
+      if (aRecent != null && bRecent == null) return -1;
+      if (aRecent != null && bRecent != null && aRecent !== bRecent) return bRecent - aRecent;
+    }
+    if (sortMode === "playtime") {
+      const aTime = playtimeFor(a, section); const bTime = playtimeFor(b, section);
+      if (aTime == null && bTime != null) return 1;
+      if (aTime != null && bTime == null) return -1;
+      if (aTime != null && bTime != null && aTime !== bTime) return bTime - aTime;
+    }
+    return String(a.title ?? "").localeCompare(String(b.title ?? ""), undefined, { sensitivity: "base", numeric: true });
   });
 }
 
@@ -117,7 +133,15 @@ const sections = PLATFORM_SECTIONS
         <h1 class="page-title mt-2">Games</h1>
         <p class="text-sm text-zinc-500 mt-2">Your games across PlayStation, Xbox, Steam and Nintendo.</p>
       </div>
-      <div class="text-sm font-bold text-zinc-500">{games.length} {games.length === 1 ? "game" : "games"}</div>
+      <div class="flex items-center gap-3">
+        <label for="game-sort" class="text-xs font-bold uppercase tracking-wider text-zinc-600">Sortieren</label>
+        <select id="game-sort" class="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm font-semibold text-zinc-200 focus:outline-none focus:ring-2 focus:ring-sky-500" onchange="window.location.href='/games?sort=' + this.value">
+          {SORT_OPTIONS.map((option) => (
+            <option value={option.value} selected={option.value === sortMode}>{option.label}</option>
+          ))}
+        </select>
+        <span class="text-sm font-bold text-zinc-500">{games.length} {games.length === 1 ? "game" : "games"}</span>
+      </div>
     </div>
 
     {games.length === 0 ? (
@@ -141,7 +165,7 @@ const sections = PLATFORM_SECTIONS
               </div>
               <div>
                 <h2 class="text-xl font-black text-zinc-100">{section.label}</h2>
-                <p class="text-xs text-zinc-600">{section.games.length} {section.games.length === 1 ? "game" : "games"} · most played first</p>
+                <p class="text-xs text-zinc-600">{section.games.length} {section.games.length === 1 ? "game" : "games"} · {SORT_OPTIONS.find((option) => option.value === sortMode)?.label}</p>
               </div>
             </div>
 
