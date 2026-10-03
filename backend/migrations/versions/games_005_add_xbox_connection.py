@@ -19,7 +19,6 @@ def upgrade() -> None:
     op.add_column("user_settings", sa.Column("xbox_oauth_state", sa.String(length=255), nullable=True))
     op.add_column("user_settings", sa.Column("xbox_xuid", sa.String(length=100), nullable=True))
     op.add_column("user_settings", sa.Column("xbox_gamertag", sa.String(length=100), nullable=True))
-    op.add_column("user_settings", sa.Column("xbox_client_state", sa.String(length=255), nullable=True))
     op.add_column("user_settings", sa.Column("xbox_connected_at", sa.DateTime(), nullable=True))
     op.add_column("user_settings", sa.Column("xbox_last_sync_at", sa.DateTime(), nullable=True))
     op.add_column("user_settings", sa.Column("xbox_last_sync_count", sa.Integer(), nullable=True))
@@ -32,7 +31,6 @@ def downgrade() -> None:
         "xbox_last_sync_count",
         "xbox_last_sync_at",
         "xbox_connected_at",
-        "xbox_client_state",
         "xbox_gamertag",
         "xbox_xuid",
         "xbox_oauth_state",
