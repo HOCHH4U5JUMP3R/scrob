@@ -45,6 +45,7 @@ try {
       </div>
 
       <p id="psn-message" class="hidden mt-4 text-sm"></p>
+      <p id="psn-sync-status" class="text-[11px] text-zinc-600 mt-3"></p>
       <p class="text-[11px] text-zinc-600 mt-5">
         PSN authentication uses Sony's NPSSO session token. Scrob never displays it again after saving it.
       </p>
@@ -87,6 +88,7 @@ try {
     const form = document.getElementById("psn-connect-form");
     const actions = document.getElementById("psn-connected-actions");
     const message = document.getElementById("psn-message");
+    const syncStatus = document.getElementById("psn-sync-status");
     const setMessage = (value, error=false) => {
       message.textContent = value;
       message.className = `mt-4 text-sm ${error ? "text-red-400" : "text-emerald-400"}`;
@@ -101,6 +103,21 @@ try {
         badge.className = "px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-bold";
         title.textContent = "PlayStation Network connected";
         text.textContent = "Your PSN library can be synchronized into Scrob.";
+        if (data.last_sync_at) {
+          const when = new Date(data.last_sync_at).toLocaleString("de-DE");
+          syncStatus.textContent = data.last_sync_error
+            ? `Last sync failed: ${data.last_sync_error}`
+            : `Last synced: ${when} · ${data.last_sync_count ?? 0} games`;
+          syncStatus.className = data.last_sync_error
+            ? "text-[11px] text-red-400 mt-3"
+            : "text-[11px] text-zinc-600 mt-3";
+        } else if (data.last_sync_error) {
+          syncStatus.textContent = `Last sync failed: ${data.last_sync_error}`;
+          syncStatus.className = "text-[11px] text-red-400 mt-3";
+        } else {
+          syncStatus.textContent = "Not synced yet.";
+          syncStatus.className = "text-[11px] text-zinc-600 mt-3";
+        }
         form.classList.add("hidden");
         actions.classList.remove("hidden");
       }

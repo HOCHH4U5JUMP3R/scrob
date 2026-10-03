@@ -74,6 +74,9 @@ async def psn_status(
         "online_id": settings.psn_online_id,
         "account_id": settings.psn_account_id,
         "connected_at": settings.psn_connected_at.isoformat() if settings.psn_connected_at else None,
+        "last_sync_at": settings.psn_last_sync_at.isoformat() if settings.psn_last_sync_at else None,
+        "last_sync_count": settings.psn_last_sync_count,
+        "last_sync_error": settings.psn_last_sync_error,
     }
 
 
@@ -94,7 +97,8 @@ async def psn_connect(
     settings.psn_npsso = npsso
     settings.psn_online_id = data["online_id"]
     settings.psn_account_id = data["account_id"]
-    settings.psn_connected_at = datetime.utcnow()
+    settings.psn_connected_at = settings.psn_connected_at or datetime.utcnow()
+    settings.psn_last_sync_error = None
     await db.commit()
 
     return {
@@ -115,6 +119,9 @@ async def psn_disconnect(
     settings.psn_online_id = None
     settings.psn_account_id = None
     settings.psn_connected_at = None
+    settings.psn_last_sync_at = None
+    settings.psn_last_sync_count = None
+    settings.psn_last_sync_error = None
     await db.commit()
     return {"status": "disconnected"}
 
@@ -132,7 +139,9 @@ async def psn_sync(
         data = await asyncio.to_thread(fetch_library, settings.psn_npsso)
     except Exception as exc:
         logger.warning("PSN sync failed for user %s: %s", current_user.id, exc)
-        raise HTTPException(status_code=400, detail="PlayStation sync failed. Your NPSSO may have expired; reconnect PlayStation and try again.")
+        settings.psn_last_sync_error = "PlayStation sync failed. Your NPSSO may have expired; reconnect PlayStation and try again."
+        await db.commit()
+        raise HTTPException(status_code=400, detail=settings.psn_last_sync_error)
 
     settings.psn_online_id = data["online_id"]
     settings.psn_account_id = data["account_id"]
@@ -202,8 +211,11 @@ async def psn_sync(
                 setattr(stats, field, item[field])
         imported += 1
 
+    settings.psn_last_sync_at = datetime.utcnow()
+    settings.psn_last_sync_count = imported
+    settings.psn_last_sync_error = None
     await db.commit()
-    return {"status": "synced", "games_imported": imported}
+    return {"status": "synced", "games_imported": imported, "synced_at": settings.psn_last_sync_at.isoformat()}
 
 
 @router.get("/games")
