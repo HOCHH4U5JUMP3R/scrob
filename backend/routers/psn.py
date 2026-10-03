@@ -82,6 +82,10 @@ async def psn_status(
     }
 
 
+class PSNAutoSyncRequest(BaseModel):
+    interval: float | None = Field(default=None, ge=0.25, le=48)
+
+
 @router.post("/connect")
 async def psn_connect(
     payload: PSNConnectRequest,
@@ -119,6 +123,20 @@ async def psn_connect(
         "online_id": online_id,
         "account_id": account_id,
     }
+
+
+@router.post("/auto-sync")
+async def psn_auto_sync(
+    payload: PSNAutoSyncRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    settings = await _get_settings(db, current_user.id)
+    if payload.interval is not None and not settings.psn_npsso:
+        raise HTTPException(status_code=400, detail="PlayStation is not connected.")
+    settings.psn_auto_sync_interval = payload.interval
+    await db.commit()
+    return {"auto_sync_interval": settings.psn_auto_sync_interval}
 
 
 @router.delete("/disconnect")
