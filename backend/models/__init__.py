@@ -30,6 +30,7 @@ from .title_credits import TitleCredits
 from .calendar_cache import UserCalendarCache
 from .plex_pending_push import PlexPendingPush
 from .oauth_device import OAuthDeviceGrant
+from .games import Game, GamePlatform
 
 __all__ = [
     "Base",
@@ -62,4 +63,5 @@ __all__ = [
     "ShowRewatch", "RewatchProgress",
     "PlexPendingPush",
     "OAuthDeviceGrant",
+    "Game", "GamePlatform",
 ]
