@@ -75,6 +75,7 @@ class UserSettings(Base):
     psn_last_sync_at      : Mapped[Optional[datetime]] = mapped_column(DateTime)
     psn_last_sync_count   : Mapped[Optional[int]] = mapped_column(Integer)
     psn_last_sync_error   : Mapped[Optional[str]] = mapped_column(String(500))
+    psn_auto_sync_interval : Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     # Xbox Network connection
     xbox_oauth_token      : Mapped[Optional[str]] = mapped_column(String(10000))
@@ -85,6 +86,7 @@ class UserSettings(Base):
     xbox_last_sync_at     : Mapped[Optional[datetime]] = mapped_column(DateTime)
     xbox_last_sync_count  : Mapped[Optional[int]] = mapped_column(Integer)
     xbox_last_sync_error  : Mapped[Optional[str]] = mapped_column(String(500))
+    xbox_auto_sync_interval : Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     # Trakt OAuth app credentials (per-user)
     trakt_client_id          : Mapped[Optional[str]]      = mapped_column(String(255))
