@@ -28,15 +28,25 @@ const { token } = Astro.locals;
       </p>
 
       <div id="psn-connect-form" class="mt-4 space-y-3">
-        <input id="psn-npsso" type="password" autocomplete="off"
-          placeholder="Paste your PSN NPSSO token"
-          class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-500" />
         <button id="psn-connect-btn" type="button"
           class="w-full px-4 py-3 rounded-xl bg-zinc-100 text-zinc-950 font-black text-sm hover:bg-white disabled:opacity-50">
-          Connect PlayStation
+          Connect with PlayStation
         </button>
+        <div id="psn-browser-panel" class="hidden rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 space-y-3">
+          <p class="text-sm font-semibold text-zinc-200">Sign in to PlayStation</p>
+          <ol class="text-xs text-zinc-500 space-y-1.5 list-decimal list-inside">
+            <li>Open PlayStation and sign in normally.</li>
+            <li>Drag the <a id="psn-bookmarklet" href="#" class="text-sky-400 hover:text-sky-300 underline font-semibold">Scrob PSN Login</a> link to your bookmarks bar.</li>
+            <li>While still on a PlayStation/Sony page, click that bookmark once.</li>
+          </ol>
+          <div class="flex flex-wrap gap-2">
+            <a id="psn-open-btn" href="https://www.playstation.com/" target="_blank" rel="noopener noreferrer" class="px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs font-bold hover:bg-zinc-700">Open PlayStation</a>
+            <button id="psn-copy-bookmarklet" type="button" class="px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs font-bold hover:bg-zinc-700">Copy bookmarklet</button>
+          </div>
+          <p id="psn-browser-status" class="text-[11px] text-zinc-500">Waiting for your PlayStation login…</p>
+          <p class="text-[10px] text-zinc-600">Scrob never receives your PSN password. The bookmarklet only reads the Sony session cookie and sends it through a one-time login state.</p>
+        </div>
       </div>
-
       <div id="psn-connected-actions" class="hidden mt-4 flex items-center gap-2 flex-wrap">
         <button id="psn-sync-btn" type="button"
           class="px-4 py-2.5 rounded-xl bg-sky-500 text-white font-black text-sm hover:bg-sky-400 disabled:opacity-50">
@@ -51,7 +61,7 @@ const { token } = Astro.locals;
       <p id="psn-message" class="hidden mt-3 text-xs"></p>
       <p id="psn-sync-status" class="text-[11px] text-zinc-600 mt-3"></p>
       <p class="text-[11px] text-zinc-600 mt-4">
-        Your NPSSO is sent only to the Scrob backend and is never shown again.
+        Scrob uses the Sony browser session to obtain and persist the PSN refresh token. Your PSN password never reaches Scrob.
       </p>
     </article>
 
