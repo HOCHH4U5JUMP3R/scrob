@@ -80,7 +80,8 @@ try {
   </div>
 
   <script define:vars={{ token, backendPort: import.meta.env.BACKEND_PORT ?? "7331" }}>
-    const apiBase = `http://localhost:${backendPort}`;
+    // SSR can use localhost, but browser requests must target the Scrob host.
+    const apiBase = `${window.location.protocol}//${window.location.hostname}:${backendPort}`;
     const headers = () => ({ Authorization: `Bearer ${token}`, "Content-Type": "application/json" });
     const badge = document.getElementById("psn-badge");
     const title = document.getElementById("psn-status-title");
