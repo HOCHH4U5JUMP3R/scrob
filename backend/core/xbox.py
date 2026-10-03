@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import os
 from datetime import datetime, timezone
 from typing import Any
 
-from httpx import HTTPStatusError, URL
+from httpx import HTTPStatusError
 from xbox.webapi.api.client import XboxLiveClient
 from xbox.webapi.api.provider.titlehub.models import TitleFields
 from xbox.webapi.api.provider.userstats.models import GeneralStatsField
@@ -16,37 +15,17 @@ from xbox.webapi.common.signed_session import SignedSession
 
 
 def _oauth_config() -> tuple[str, str, str]:
-    client_id = os.getenv("SCROB_XBOX_CLIENT_ID", "").strip()
-    client_secret = os.getenv("SCROB_XBOX_CLIENT_SECRET", "")
-    redirect_uri = os.getenv("SCROB_XBOX_REDIRECT_URI", "").strip()
-    if not client_id or not redirect_uri:
-        raise RuntimeError(
-            "Xbox integration is not configured. Set SCROB_XBOX_CLIENT_ID "
-            "and SCROB_XBOX_REDIRECT_URI."
-        )
-    return client_id, client_secret, redirect_uri
+    """Use the shared OpenXbox desktop application; no user app registration is required."""
+    from xbox.webapi.scripts import CLIENT_ID, CLIENT_SECRET, REDIRECT_URI
 
-
-def is_configured() -> bool:
-    return bool(os.getenv("SCROB_XBOX_CLIENT_ID", "").strip() and os.getenv("SCROB_XBOX_REDIRECT_URI", "").strip())
+    return CLIENT_ID, CLIENT_SECRET, REDIRECT_URI
 
 
 def authorization_url(state: str) -> str:
     client_id, client_secret, redirect_uri = _oauth_config()
-    # client_secret is intentionally unused here; it must never be exposed to the browser.
-    _ = client_secret
-    from xbox.webapi.common.signed_session import SignedSession
-
-    # AuthenticationManager only needs the session to construct the URL.
-    # The session is closed immediately; token exchange creates its own session.
     session = SignedSession()
-    try:
-        manager = AuthenticationManager(session, client_id, client_secret, redirect_uri)
-        return manager.generate_authorization_url(state=state)
-    finally:
-        # SignedSession is async; the object is only used for URL generation.
-        # It does not open a network connection here.
-        pass
+    manager = AuthenticationManager(session, client_id, client_secret, redirect_uri)
+    return manager.generate_authorization_url(state=state)
 
 
 async def exchange_code(code: str) -> OAuth2TokenResponse:
