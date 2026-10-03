@@ -7,7 +7,7 @@ const { token } = Astro.locals;
     <article class="rounded-2xl border border-zinc-800 bg-zinc-900/70 overflow-hidden">
       <div class="flex items-center justify-between gap-4 px-6 py-4">
         <div class="flex items-center gap-3">
-          <div class="w-11 h-11 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-xl">◉</div>
+          <div class="w-11 h-11 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center" style="color: #003791"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M8.984 2.596v17.547l3.915 1.261V6.688c0-.69.304-1.151.794-.991.636.18.76.814.76 1.505v5.875c2.441 1.193 4.362-.002 4.362-3.152 0-3.237-1.126-4.675-4.438-5.827-1.307-.448-3.728-1.186-5.39-1.502zm4.656 16.241 6.296-2.275c.715-.258.826-.625.246-.818-.586-.192-1.637-.139-2.357.123l-4.205 1.5V14.98l.24-.085s1.201-.42 2.913-.615c1.696-.18 3.785.03 5.437.661 1.848.601 2.04 1.472 1.576 2.072-.465.6-1.622 1.036-1.622 1.036l-8.544 3.107V18.86zM1.807 18.6c-1.9-.545-2.214-1.668-1.352-2.32.801-.586 2.16-1.052 2.16-1.052l5.615-2.013v2.313L4.205 17c-.705.271-.825.632-.239.826.586.195 1.637.15 2.343-.12L8.247 17v2.074c-.12.03-.256.044-.39.073-1.939.331-3.996.196-6.038-.479z"/></svg></div>
           <div>
             <h3 class="font-bold text-zinc-100">PlayStation Network</h3>
             <p id="psn-status" class="text-xs text-zinc-500 mt-0.5">Checking connection…</p>
@@ -16,10 +16,7 @@ const { token } = Astro.locals;
         <span id="psn-badge" class="px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-500 text-[10px] font-black uppercase tracking-wider">Offline</span>
       </div>
 
-      <p class="text-sm text-zinc-500 px-6 pb-5">
-        Import PS4/PS5 playtime and last-played data plus trophy progress. PS3 and Vita trophy titles are included where PSN provides them.
-      </p>
-
+      <p 
       <div id="psn-connect-form" class="px-6 pb-6 space-y-3">
         <button id="psn-connect-btn" type="button"
           class="w-full px-4 py-3 rounded-xl bg-zinc-100 text-zinc-950 font-black text-sm hover:bg-white disabled:opacity-50">
@@ -40,7 +37,7 @@ const { token } = Astro.locals;
           <p class="text-[10px] text-zinc-600">Scrob never receives your PSN password. The bookmarklet only reads the Sony session cookie and sends it through a one-time login state.</p>
         </div>
       </div>
-      <div id="psn-connected-actions" class="hidden px-6 pb-4 flex items-center gap-2 flex-wrap">
+      <div id="psn-connected-actions" class="hidden px-6 pb-2 pt-1 flex items-center gap-2 flex-wrap">
         <button id="psn-sync-btn" type="button"
           class="px-4 py-2.5 rounded-xl bg-sky-500 text-white font-black text-sm hover:bg-sky-400 disabled:opacity-50">
           Sync games
@@ -52,7 +49,7 @@ const { token } = Astro.locals;
           </select>
         </label>
         <button id="psn-disconnect-btn" type="button"
-          class="px-4 py-2.5 rounded-xl border border-zinc-700 text-zinc-400 font-bold text-sm hover:text-white">
+          class="px-2.5 py-1.5 rounded-lg border border-zinc-800 text-zinc-500 text-[11px] font-bold hover:border-zinc-600 hover:text-zinc-200 transition">
           Disconnect
         </button>
       </div>
@@ -60,15 +57,12 @@ const { token } = Astro.locals;
 
       <p id="psn-message" class="hidden px-6 mt-3 text-xs"></p>
       <p id="psn-sync-status" class="px-6 text-[11px] text-zinc-600 mt-3"></p>
-      <p class="text-[11px] text-zinc-600 mt-4">
-        Scrob uses the Sony browser session to obtain and persist the PSN refresh token. Your PSN password never reaches Scrob.
-      </p>
-    </article>
+      <p     </article>
 
     <article class="rounded-2xl border border-zinc-800 bg-zinc-900/70 overflow-hidden">
       <div class="flex items-start justify-between gap-4">
         <div class="flex items-center gap-3">
-          <div class="w-11 h-11 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-xl">X</div>
+          <div class="w-11 h-11 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center" style="color: #107C10"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M4.102 21.033A11.95 11.95 0 0 0 12 24a11.96 11.96 0 0 0 7.902-2.967c1.877-1.912-4.316-8.709-7.902-11.417-3.582 2.708-9.779 9.505-7.898 11.417m11.16-14.406c2.5 2.961 7.484 10.313 6.076 12.912A11.94 11.94 0 0 0 24 12.004a11.95 11.95 0 0 0-3.57-8.536s-.027-.022-.082-.042a.8.8 0 0 0-.281-.045c-.592 0-1.985.434-4.805 3.246M3.654 3.426c-.057.02-.082.042-.086.042A11.96 11.96 0 0 0 0 12.004c0 2.854.998 5.473 2.661 7.533-1.401-2.605 3.579-9.951 6.08-12.91-2.82-2.813-4.216-3.245-4.806-3.245a.7.7 0 0 0-.281.046zM12 3.551S9.055 1.828 6.755 1.746c-.903-.033-1.454.295-1.521.339C7.379.646 9.659 0 11.984 0H12c2.334 0 4.605.646 6.766 2.085-.068-.046-.615-.372-1.52-.339C14.946 1.828 12 3.545 12 3.545z"/></svg></div>
           <div>
             <h3 class="font-bold text-zinc-100">Xbox Network</h3>
             <p id="xbox-status" class="text-xs text-zinc-500 mt-0.5">Checking connection…</p>
@@ -77,10 +71,7 @@ const { token } = Astro.locals;
         <span id="xbox-badge" class="px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-500 text-[10px] font-black uppercase tracking-wider">Offline</span>
       </div>
 
-      <p class="text-sm text-zinc-500 mt-4">
-        Connect your Microsoft account to import Xbox game history, playtime and achievement progress.
-      </p>
-
+      <p 
       <div id="xbox-connect-form" class="px-6 pb-6 space-y-3">
         <button id="xbox-connect-btn" type="button"
           class="w-full px-4 py-3 rounded-xl bg-zinc-100 text-zinc-950 font-black text-sm hover:bg-white disabled:opacity-50">
@@ -120,10 +111,7 @@ const { token } = Astro.locals;
 
       <p id="xbox-message" class="hidden px-6 mt-3 text-xs"></p>
       <p id="xbox-sync-status" class="px-6 text-[11px] text-zinc-600 mt-3"></p>
-      <p class="px-6 pb-5 text-[11px] text-zinc-600 mt-4">
-        No Azure or Entra setup is required. Sign in with Microsoft and Scrob stores the OAuth token for future syncs.
-      </p>
-    </article>
+      <p     </article>
 
     {[
 
