@@ -42,17 +42,18 @@ const { token } = Astro.locals;
           class="px-4 py-2.5 rounded-xl bg-sky-500 text-white font-black text-sm hover:bg-sky-400 disabled:opacity-50">
           Sync games
         </button>
-        <button id="psn-disconnect-btn" type="button"
-          class="px-4 py-2.5 rounded-xl border border-zinc-700 text-zinc-400 font-bold text-sm hover:text-white">
-          Disconnect
-        </button>
-      </div>
-        <label class="flex items-center gap-2 text-xs text-zinc-500">
+<label class="flex items-center gap-2 text-xs text-zinc-500">
           Auto sync
           <select id="psn-auto-sync" class="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-300">
             <option value="">Off</option><option value="0.25">Every 15 minutes</option><option value="0.5">Every 30 minutes</option><option value="1">Every hour</option><option value="3">Every 3 hours</option><option value="6">Every 6 hours</option><option value="12">Every 12 hours</option><option value="24">Every 24 hours</option>
           </select>
         </label>
+        <button id="psn-disconnect-btn" type="button"
+          class="px-4 py-2.5 rounded-xl border border-zinc-700 text-zinc-400 font-bold text-sm hover:text-white">
+          Disconnect
+        </button>
+      </div>
+        
 
       <p id="psn-message" class="hidden mt-3 text-xs"></p>
       <p id="psn-sync-status" class="text-[11px] text-zinc-600 mt-3"></p>
@@ -101,17 +102,18 @@ const { token } = Astro.locals;
           class="px-4 py-2.5 rounded-xl bg-sky-500 text-white font-black text-sm hover:bg-sky-400 disabled:opacity-50">
           Sync games
         </button>
-        <button id="xbox-disconnect-btn" type="button"
-          class="px-4 py-2.5 rounded-xl border border-zinc-700 text-zinc-400 font-bold text-sm hover:text-white">
-          Disconnect
-        </button>
-      </div>
-        <label class="flex items-center gap-2 text-xs text-zinc-500">
+<label class="flex items-center gap-2 text-xs text-zinc-500">
           Auto sync
           <select id="xbox-auto-sync" class="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-300">
             <option value="">Off</option><option value="0.25">Every 15 minutes</option><option value="0.5">Every 30 minutes</option><option value="1">Every hour</option><option value="3">Every 3 hours</option><option value="6">Every 6 hours</option><option value="12">Every 12 hours</option><option value="24">Every 24 hours</option>
           </select>
         </label>
+        <button id="xbox-disconnect-btn" type="button"
+          class="px-4 py-2.5 rounded-xl border border-zinc-700 text-zinc-400 font-bold text-sm hover:text-white">
+          Disconnect
+        </button>
+      </div>
+        
 
       <p id="xbox-message" class="hidden mt-3 text-xs"></p>
       <p id="xbox-sync-status" class="text-[11px] text-zinc-600 mt-3"></p>
