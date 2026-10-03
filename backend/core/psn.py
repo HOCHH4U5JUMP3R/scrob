@@ -74,7 +74,7 @@ def fetch_library(npsso: str) -> dict:
     trophies = {}
     trophy_error = None
     try:
-        for title in client.trophy_titles(limit=100):
+        for title in client.trophy_titles(limit=None):
             title_id = title.np_title_id
             # Some trophy responses do not expose np_title_id. In that case the
             # communication id is still stable and useful as the external identity.
@@ -94,6 +94,7 @@ def fetch_library(npsso: str) -> dict:
                 "title": title.title_name,
                 "cover_path": title.title_icon_url,
                 "platform_name": platform_name,
+                "platforms": platforms,
                 "trophy_progress": title.progress,
                 "trophies_earned": _trophy_set(title.earned_trophies),
                 "trophies_defined": _trophy_set(title.defined_trophies),
@@ -110,22 +111,55 @@ def fetch_library(npsso: str) -> dict:
             raise RuntimeError(f"PlayStation trophy request failed: {trophy_error}") from trophy_error
         raise RuntimeError("PlayStation returned no game data")
 
-    merged: dict[str, dict] = {}
-    for external_id, item in stats.items():
-        merged[external_id] = item
+    def _normalize_title(value: str | None) -> str:
+        return "".join(char.lower() for char in (value or "") if char.isalnum())
 
-    for external_id, item in trophies.items():
-        current = merged.setdefault(external_id, {})
-        current.update({
-            "title_id": external_id,
-            "title": current.get("title") or item["title"],
-            "cover_path": current.get("cover_path") or item["cover_path"],
-            "platform_name": current.get("platform_name") or item["platform_name"],
-            "trophy_progress": item["trophy_progress"],
-            "trophies_earned": item["trophies_earned"],
-            "trophies_defined": item["trophies_defined"],
-            "last_updated_at": item["last_updated_at"],
-        })
+    def _platform_matches(stats_item: dict, trophy_item: dict) -> bool:
+        stats_platform = (stats_item.get("platform_name") or "").lower()
+        trophy_platforms = {str(platform).lower() for platform in trophy_item.get("platforms", [])}
+        if not trophy_platforms:
+            return True
+        mapping = {
+            "playstation 4": "ps4",
+            "playstation 5": "ps5",
+            "playstation 3": "ps3",
+            "playstation vita": "psvita",
+            "playstation pc": "pspc",
+        }
+        return any(platform in trophy_platforms for name, platform in mapping.items() if name in stats_platform)
+
+    stats_by_id = {str(item["title_id"]): item for item in stats.values()}
+    unmatched_trophies = dict(trophies)
+
+    for external_id, item in stats_by_id.items():
+        trophy = trophies.get(external_id)
+        if trophy is None:
+            normalized_title = _normalize_title(item.get("title"))
+            trophy = next(
+                (
+                    candidate
+                    for candidate in trophies.values()
+                    if _normalize_title(candidate.get("title")) == normalized_title
+                    and _platform_matches(item, candidate)
+                ),
+                None,
+            )
+
+        if trophy is not None:
+            item.update({
+                "trophy_progress": trophy["trophy_progress"],
+                "trophies_earned": trophy["trophies_earned"],
+                "trophies_defined": trophy["trophies_defined"],
+                "last_updated_at": trophy["last_updated_at"],
+            })
+            unmatched_trophies.pop(trophy["title_id"], None)
+
+    # Keep trophy-only titles (including PS3/Vita) in the library.
+    merged: dict[str, dict] = dict(stats_by_id)
+    for external_id, item in unmatched_trophies.items():
+        merged[external_id] = {
+            key: value for key, value in item.items() if key != "platforms"
+        }
 
     return {
         "online_id": online_id,
