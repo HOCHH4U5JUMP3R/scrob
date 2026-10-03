@@ -121,24 +121,48 @@ const { token } = Astro.locals;
       <p id="xbox-sync-status" class="px-6 text-[11px] text-zinc-600 mt-3"></p>
       <p     </article>
 
-    {[
-
-      ["Steam", "Steam library and playtime integration"],
-      ["Nintendo", "Nintendo game network integration"],
-    ].map(([name, description]) => (
-      <article class="rounded-2xl border border-zinc-800 bg-zinc-900/40 overflow-hidden opacity-80">
-        <div class="flex items-start justify-between gap-4">
-          <div class="flex items-center gap-3">
-            <div class="w-11 h-11 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-xl">🎮</div>
-            <div>
-              <h3 class="font-bold text-zinc-200">{name}</h3>
-              <p class="text-xs text-zinc-500 mt-0.5">{description}</p>
-            </div>
+    <article class="rounded-2xl border border-zinc-800 bg-zinc-900/70 overflow-hidden">
+      <div class="flex items-center justify-between gap-4 px-6 py-4">
+        <div class="flex items-center gap-3">
+          <div class="w-11 h-11 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-zinc-300">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.605 0 11.979 0z"/></svg>
           </div>
-          <span class="px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-600 text-[10px] font-black uppercase tracking-wider">Soon</span>
+          <div>
+            <h3 class="font-bold text-zinc-100">Steam</h3>
+            <p id="steam-status" class="text-xs text-zinc-500 mt-0.5">Checking connection…</p>
+          </div>
         </div>
-      </article>
-    ))}
+        <div class="flex items-center gap-2">
+          <span id="steam-badge" class="px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-500 text-[10px] font-black uppercase tracking-wider">Offline</span>
+          <button id="steam-disconnect-btn" type="button" class="hidden px-2.5 py-1.5 rounded-lg border border-zinc-800 text-zinc-500 text-[11px] font-bold hover:border-zinc-600 hover:text-zinc-200 transition">Disconnect</button>
+        </div>
+      </div>
+      <div id="steam-connect-form" class="px-6 pb-6">
+        <button id="steam-connect-btn" type="button" class="w-full px-4 py-3 rounded-xl bg-zinc-100 text-zinc-950 font-black text-sm hover:bg-white disabled:opacity-50">Connect with Steam</button>
+        <p class="text-[11px] text-zinc-600 mt-2">Sign in through Steam in your browser. Your Steam password never reaches Scrob. Your Steam profile and game details must be public.</p>
+      </div>
+      <details id="steam-connected-actions" class="hidden border-t border-zinc-800">
+        <summary class="cursor-pointer list-none px-6 py-3 text-xs font-bold text-zinc-400 hover:text-zinc-200 flex items-center justify-between"><span>Sync & Auto Sync</span><span class="text-zinc-600">⌄</span></summary>
+        <div class="px-6 pb-4 flex items-center gap-3 flex-wrap">
+          <button id="steam-sync-btn" type="button" class="px-4 py-2.5 rounded-xl bg-sky-500 text-white font-black text-sm hover:bg-sky-400 disabled:opacity-50">Sync games</button>
+          <label class="flex items-center gap-2 text-xs text-zinc-500">Auto sync
+            <select id="steam-auto-sync" class="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-300">
+              <option value="">Off</option><option value="0.25">Every 15 minutes</option><option value="0.5">Every 30 minutes</option><option value="1">Every hour</option><option value="3">Every 3 hours</option><option value="6">Every 6 hours</option><option value="12">Every 12 hours</option><option value="24">Every 24 hours</option>
+            </select>
+          </label>
+        </div>
+      </details>
+      <p id="steam-message" class="hidden px-6 mt-3 text-xs"></p>
+      <p id="steam-sync-status" class="px-6 pb-5 text-[10px] text-zinc-600 mt-1">Not synced yet.</p>
+    </article>
+
+    <article class="rounded-2xl border border-zinc-800 bg-zinc-900/40 overflow-hidden opacity-80">
+      <div class="flex items-center gap-3 px-6 py-4">
+        <div class="w-11 h-11 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-xl">🎮</div>
+        <div><h3 class="font-bold text-zinc-200">Nintendo</h3><p class="text-xs text-zinc-500 mt-0.5">Nintendo game network integration</p></div>
+        <span class="ml-auto px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-600 text-[10px] font-black uppercase tracking-wider">Soon</span>
+      </div>
+    </article>
   </div>
 </section>
 
@@ -170,6 +194,14 @@ const { token } = Astro.locals;
   const xboxCode = document.getElementById("xbox-code");
   const psnAutoSync = document.getElementById("psn-auto-sync");
   const xboxAutoSync = document.getElementById("xbox-auto-sync");
+  const steamBadge = document.getElementById("steam-badge");
+  const steamStatus = document.getElementById("steam-status");
+  const steamForm = document.getElementById("steam-connect-form");
+  const steamActions = document.getElementById("steam-connected-actions");
+  const steamMessage = document.getElementById("steam-message");
+  const steamSyncStatus = document.getElementById("steam-sync-status");
+  const steamDisconnectBtn = document.getElementById("steam-disconnect-btn");
+  const steamAutoSync = document.getElementById("steam-auto-sync");
   const steamBadge = document.getElementById("steam-badge");
   const steamStatus = document.getElementById("steam-status");
   const steamForm = document.getElementById("steam-connect-form");
@@ -214,6 +246,102 @@ const { token } = Astro.locals;
   });
   document.getElementById("steam-sync-btn")?.addEventListener("click", async () => { const button = document.getElementById("steam-sync-btn"); button.disabled = true; setSteamMessage("Syncing your Steam library…"); try { const res = await api("/steam/sync", { method: "POST" }); if (!res.ok) throw new Error(await readError(res, "Steam sync failed.")); const data = await res.json(); setSteamMessage("Synced " + data.games_imported + " games."); await refreshSteamStatus(); setTimeout(() => location.reload(), 500); } catch (error) { setSteamMessage(error?.message || "Steam sync failed.", true); } finally { button.disabled = false; } });
   steamDisconnectBtn?.addEventListener("click", async () => { const res = await api("/steam/disconnect", { method: "DELETE" }); if (!res.ok) { setSteamMessage(await readError(res, "Could not disconnect Steam."), true); return; } location.reload(); });
+
+  const setSteamMessage = (value, error = false) => {
+    steamMessage.textContent = value;
+    steamMessage.className = "mt-3 text-xs " + (error ? "text-red-400" : "text-emerald-400");
+    steamMessage.classList.remove("hidden");
+  };
+
+  const refreshSteamStatus = async () => {
+    try {
+      const res = await api("/steam/status");
+      if (!res.ok) throw new Error(await readError(res, "Could not read Steam connection status."));
+      const data = await res.json();
+      if (!data.connected) {
+        steamBadge.textContent = "Offline";
+        steamStatus.textContent = "Not connected";
+        steamForm.classList.remove("hidden");
+        steamActions.classList.add("hidden");
+        steamDisconnectBtn.classList.add("hidden");
+        return;
+      }
+      steamBadge.textContent = "Connected";
+      steamBadge.className = "px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-black uppercase tracking-wider";
+      steamStatus.textContent = data.persona_name ? "Connected as " + data.persona_name : "Connected";
+      steamForm.classList.add("hidden");
+      steamActions.classList.remove("hidden");
+      steamDisconnectBtn.classList.remove("hidden");
+      steamAutoSync.value = data.auto_sync_interval != null ? String(data.auto_sync_interval) : "";
+      if (data.last_sync_error) {
+        steamSyncStatus.textContent = "Last sync failed: " + data.last_sync_error;
+        steamSyncStatus.className = "px-6 pb-5 text-[10px] text-red-400 mt-1";
+      } else if (data.last_sync_at) {
+        steamSyncStatus.textContent = "Last synced: " + new Date(data.last_sync_at).toLocaleString("de-DE") + " · " + (data.last_sync_count ?? 0) + " games";
+      } else {
+        steamSyncStatus.textContent = "Not synced yet.";
+      }
+    } catch (error) {
+      steamStatus.textContent = error?.message || "Could not check connection";
+    }
+  };
+
+  document.getElementById("steam-connect-btn")?.addEventListener("click", async () => {
+    const button = document.getElementById("steam-connect-btn");
+    button.disabled = true;
+    setSteamMessage("Opening Steam sign-in…");
+    try {
+      const res = await api("/steam/authorize", { method: "POST", body: JSON.stringify({}) });
+      if (!res.ok) throw new Error(await readError(res, "Could not start Steam authentication."));
+      const data = await res.json();
+      window.open(data.authorization_url, "_blank", "noopener,noreferrer");
+      const deadline = Date.now() + 600000;
+      while (Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        const poll = await api("/steam/status");
+        if (poll.ok && (await poll.json()).connected) {
+          await refreshSteamStatus();
+          setSteamMessage("Steam connected. You can now sync your games.");
+          return;
+        }
+      }
+      throw new Error("Steam login timed out. Start the connection again.");
+    } catch (error) {
+      setSteamMessage(error?.message || "Steam authentication failed.", true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  steamAutoSync?.addEventListener("change", () => setAutoSync("steam", steamAutoSync.value, steamAutoSync));
+
+  document.getElementById("steam-sync-btn")?.addEventListener("click", async () => {
+    const button = document.getElementById("steam-sync-btn");
+    button.disabled = true;
+    setSteamMessage("Syncing your Steam library…");
+    try {
+      const res = await api("/steam/sync", { method: "POST" });
+      if (!res.ok) throw new Error(await readError(res, "Steam sync failed."));
+      const data = await res.json();
+      setSteamMessage("Synced " + data.games_imported + " games.");
+      await refreshSteamStatus();
+      setTimeout(() => location.reload(), 500);
+    } catch (error) {
+      setSteamMessage(error?.message || "Steam sync failed.", true);
+      await refreshSteamStatus();
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  steamDisconnectBtn?.addEventListener("click", async () => {
+    const res = await api("/steam/disconnect", { method: "DELETE" });
+    if (!res.ok) {
+      setSteamMessage(await readError(res, "Could not disconnect Steam."), true);
+      return;
+    }
+    location.reload();
+  });
 
   const setXboxMessage = (value, error = false) => {
     xboxMessage.textContent = value;
@@ -495,5 +623,6 @@ const { token } = Astro.locals;
 
   refreshStatus();
   refreshXboxStatus();
+  refreshSteamStatus();
   refreshSteamStatus();
 </script>
