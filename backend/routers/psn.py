@@ -109,6 +109,7 @@ async def psn_status(
         "last_sync_at": settings.psn_last_sync_at.isoformat() if settings.psn_last_sync_at else None,
         "last_sync_count": settings.psn_last_sync_count,
         "last_sync_error": settings.psn_last_sync_error,
+        "auto_sync_interval": settings.psn_auto_sync_interval,
     }
 
 
@@ -184,6 +185,7 @@ async def psn_disconnect(
     settings.psn_last_sync_at = None
     settings.psn_last_sync_count = None
     settings.psn_last_sync_error = None
+    settings.psn_auto_sync_interval = None
     await db.commit()
     return {"status": "disconnected"}
 

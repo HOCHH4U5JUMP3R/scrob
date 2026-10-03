@@ -57,6 +57,7 @@ async def xbox_status(
         "last_sync_at": settings.xbox_last_sync_at.isoformat() if settings.xbox_last_sync_at else None,
         "last_sync_count": settings.xbox_last_sync_count,
         "last_sync_error": settings.xbox_last_sync_error,
+        "auto_sync_interval": settings.xbox_auto_sync_interval,
     }
 
 
@@ -158,6 +159,7 @@ async def xbox_disconnect(
     settings.xbox_last_sync_count = None
     settings.xbox_last_sync_error = None
     settings.xbox_oauth_state = None
+    settings.xbox_auto_sync_interval = None
     await db.commit()
     return {"status": "disconnected"}
 
