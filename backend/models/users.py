@@ -76,6 +76,16 @@ class UserSettings(Base):
     psn_last_sync_count   : Mapped[Optional[int]] = mapped_column(Integer)
     psn_last_sync_error   : Mapped[Optional[str]] = mapped_column(String(500))
 
+    # Xbox Network connection
+    xbox_oauth_token      : Mapped[Optional[str]] = mapped_column(String(10000))
+    xbox_oauth_state      : Mapped[Optional[str]] = mapped_column(String(255))
+    xbox_xuid             : Mapped[Optional[str]] = mapped_column(String(100))
+    xbox_gamertag         : Mapped[Optional[str]] = mapped_column(String(100))
+    xbox_connected_at     : Mapped[Optional[datetime]] = mapped_column(DateTime)
+    xbox_last_sync_at     : Mapped[Optional[datetime]] = mapped_column(DateTime)
+    xbox_last_sync_count  : Mapped[Optional[int]] = mapped_column(Integer)
+    xbox_last_sync_error  : Mapped[Optional[str]] = mapped_column(String(500))
+
     # Trakt OAuth app credentials (per-user)
     trakt_client_id          : Mapped[Optional[str]]      = mapped_column(String(255))
     trakt_client_secret      : Mapped[Optional[str]]      = mapped_column(String(255))
