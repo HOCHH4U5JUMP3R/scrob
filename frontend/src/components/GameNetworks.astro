@@ -163,6 +163,7 @@ const { token } = Astro.locals;
         steamSyncStatus.className = "px-6 pb-5 text-[10px] text-red-400 mt-1";
       } else if (data.last_sync_at) {
         steamSyncStatus.textContent = "Last synced: " + new Date(data.last_sync_at).toLocaleString("de-DE") + " · " + (data.last_sync_count ?? 0) + " games";
+        steamLastSyncHeader.textContent = "Last synced: " + new Date(data.last_sync_at).toLocaleString("de-DE");
       } else {
         steamSyncStatus.textContent = "Not synced yet.";
       }
