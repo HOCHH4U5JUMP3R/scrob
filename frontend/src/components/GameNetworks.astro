@@ -337,32 +337,73 @@ const { token } = Astro.locals;
     }
   }
 
-  document.getElementById("psn-connect-btn")?.addEventListener("click", async () => {
-    const input = document.getElementById("psn-npsso");
+  let psnBrowserState = "";
+
+  const buildPsnBookmarklet = (state) => {
+    const target = window.location.origin + "/api/proxy/psn/browser/complete";
+    const code = [
+      "(async()=>{",
+      "const m=document.cookie.match(/(?:^|;\\s*)npsso=([^;]+)/);",
+      'if(!m){alert("No PSN session cookie found. Please sign in to PlayStation first.");return;}',
+      "try{",
+      "await fetch(" + JSON.stringify(target) + ",{method:\"POST\",mode:\"no-cors\",headers:{\"Content-Type\":\"text/plain\"},body:" + JSON.stringify(state) + "+\"|\"+location.hostname+\"|\"+decodeURIComponent(m[1])});",
+      'alert("Scrob: PlayStation login sent. Return to Scrob.");',
+      '}catch(e){alert("Scrob: Could not send the PlayStation login.");}',
+      "})()",
+    ].join("");
+    return "javascript:" + encodeURIComponent(code);
+  };
+
+  const startPsnBrowserLogin = async () => {
     const button = document.getElementById("psn-connect-btn");
-    const npsso = input.value.trim();
-    if (!npsso) return setMessage("Please paste your NPSSO token.", true);
+    const panel = document.getElementById("psn-browser-panel");
+    const statusEl = document.getElementById("psn-browser-status");
+    const bookmarklet = document.getElementById("psn-bookmarklet");
+    const openBtn = document.getElementById("psn-open-btn");
+    const copyBtn = document.getElementById("psn-copy-bookmarklet");
+    if (!button || !panel || !statusEl || !bookmarklet || !openBtn || !copyBtn) return;
 
     button.disabled = true;
-    setMessage("Checking PlayStation authentication…");
-
+    setMessage("Preparing PlayStation sign-in…");
     try {
-      const res = await api("/psn/connect", {
-        method: "POST",
-        body: JSON.stringify({ npsso }),
-      });
-      if (!res.ok) throw new Error(await readError(res, "PlayStation authentication failed."));
+      const res = await api("/psn/browser/start", { method: "POST" });
+      if (!res.ok) throw new Error(await readError(res, "Could not start PlayStation authentication."));
       const data = await res.json();
-      input.value = "";
-      setMessage("Connected as " + data.online_id + ". You can now sync your games.");
-      await refreshStatus();
+      psnBrowserState = data.state;
+      const href = buildPsnBookmarklet(psnBrowserState);
+      bookmarklet.href = href;
+      copyBtn.onclick = async () => {
+        await navigator.clipboard.writeText(href);
+        copyBtn.textContent = "Copied";
+        setTimeout(() => { copyBtn.textContent = "Copy bookmarklet"; }, 1500);
+      };
+      openBtn.href = data.playstation_url;
+      panel.classList.remove("hidden");
+      statusEl.textContent = "Waiting for the PlayStation session…";
+      window.open(data.playstation_url, "_blank", "noopener,noreferrer");
+      const deadline = Date.now() + (data.expires_in * 1000);
+      while (Date.now() < deadline && psnBrowserState) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const poll = await api("/psn/browser/status?state=" + encodeURIComponent(psnBrowserState));
+        if (!poll.ok) throw new Error(await readError(poll, "PlayStation login failed."));
+        const result = await poll.json();
+        if (result.status === "completed") {
+          psnBrowserState = "";
+          statusEl.textContent = "Connected as " + result.online_id + ".";
+          setMessage("PlayStation connected. You can now sync your games.");
+          await refreshStatus();
+          return;
+        }
+      }
+      throw new Error("PlayStation login timed out. Start the connection again.");
     } catch (error) {
       setMessage(error?.message || "PlayStation authentication failed.", true);
     } finally {
       button.disabled = false;
     }
-  });
+  };
 
+  document.getElementById("psn-connect-btn")?.addEventListener("click", startPsnBrowserLogin);
   document.getElementById("psn-sync-btn")?.addEventListener("click", async () => {
     const button = document.getElementById("psn-sync-btn");
     button.disabled = true;
