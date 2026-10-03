@@ -10,29 +10,70 @@ from models.users import User
 
 router = APIRouter()
 
-def _game(game: Game) -> dict:
+
+def _game(game: Game, current_user_id: int) -> dict:
     return {
-        "id": game.id, "title": game.title, "original_title": game.original_title,
-        "slug": game.slug, "overview": game.overview, "cover_path": game.cover_path,
+        "id": game.id,
+        "title": game.title,
+        "original_title": game.original_title,
+        "slug": game.slug,
+        "overview": game.overview,
+        "cover_path": game.cover_path,
         "backdrop_path": game.backdrop_path,
         "release_date": game.release_date.isoformat() if game.release_date else None,
         "genres": game.genres or [],
-        "platforms": [{"id": p.id, "platform": p.platform, "external_id": p.external_id,
-                       "platform_name": p.platform_name, "external_url": p.external_url}
-                      for p in game.platforms],
+        "platforms": [
+            {
+                "id": p.id,
+                "platform": p.platform,
+                "external_id": p.external_id,
+                "platform_name": p.platform_name,
+                "external_url": p.external_url,
+            }
+            for p in game.platforms
+        ],
+        "stats": [
+            {
+                "platform": s.platform,
+                "play_count": s.play_count,
+                "playtime_minutes": s.playtime_minutes,
+                "first_played_at": s.first_played_at.isoformat() if s.first_played_at else None,
+                "last_played_at": s.last_played_at.isoformat() if s.last_played_at else None,
+                "trophy_progress": s.trophy_progress,
+                "trophies_earned": s.trophies_earned,
+                "trophies_defined": s.trophies_defined,
+            }
+            for s in game.user_stats
+            if s.user_id == current_user_id
+        ],
     }
 
+
 @router.get("")
-async def list_games(db: AsyncSession = Depends(get_db),
-                     current_user: User = Depends(get_current_user_or_api_key)):
-    result = await db.execute(select(Game).options(selectinload(Game.platforms)).order_by(Game.title.asc()))
-    return {"results": [_game(game) for game in result.scalars().unique().all()]}
+async def list_games(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user_or_api_key),
+):
+    result = await db.execute(
+        select(Game)
+        .options(selectinload(Game.platforms), selectinload(Game.user_stats))
+        .order_by(Game.title.asc())
+    )
+    return {"results": [_game(game, current_user.id) for game in result.scalars().unique().all()]}
+
 
 @router.get("/{game_id}")
-async def get_game(game_id: int, db: AsyncSession = Depends(get_db),
-                   current_user: User = Depends(get_current_user_or_api_key)):
-    result = await db.execute(select(Game).options(selectinload(Game.platforms)).where(Game.id == game_id))
+async def get_game(
+    game_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user_or_api_key),
+):
+    result = await db.execute(
+        select(Game)
+        .options(selectinload(Game.platforms), selectinload(Game.user_stats))
+        .where(Game.id == game_id)
+    )
     game = result.scalar_one_or_none()
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
-    return _game(game)
+    return _game(game, current_user.id)

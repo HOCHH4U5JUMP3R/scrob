@@ -37,6 +37,10 @@ class Game(Base):
         back_populates="game",
         cascade="all, delete-orphan",
     )
+    user_stats: Mapped[list["GameUserStats"]] = relationship(
+        back_populates="game",
+        cascade="all, delete-orphan",
+    )
 
 
 class GamePlatform(Base):
@@ -63,3 +67,41 @@ class GamePlatform(Base):
     metadata_json: Mapped[Optional[dict]] = mapped_column("metadata", JSONB)
 
     game: Mapped["Game"] = relationship(back_populates="platforms")
+
+
+class GameUserStats(Base):
+    __tablename__ = "game_user_stats"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "game_id",
+            "platform",
+            name="uq_game_user_stats_user_game_platform",
+        ),
+        Index("idx_game_user_stats_user", "user_id"),
+        Index("idx_game_user_stats_game", "game_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    game_id: Mapped[int] = mapped_column(
+        ForeignKey("games.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    platform: Mapped[str] = mapped_column(String(32), nullable=False)
+    play_count: Mapped[Optional[int]] = mapped_column(Integer)
+    playtime_minutes: Mapped[Optional[int]] = mapped_column(Integer)
+    first_played_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    last_played_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    trophy_progress: Mapped[Optional[int]] = mapped_column(Integer)
+    trophies_earned: Mapped[Optional[dict]] = mapped_column(JSONB)
+    trophies_defined: Mapped[Optional[dict]] = mapped_column(JSONB)
+    metadata_json: Mapped[Optional[dict]] = mapped_column("metadata", JSONB)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    game: Mapped["Game"] = relationship(back_populates="user_stats")
