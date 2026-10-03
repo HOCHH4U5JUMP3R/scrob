@@ -30,7 +30,8 @@ def _trophy_set(value) -> dict[str, int]:
     }
 
 
-def fetch_library(npsso: str) -> dict:
+def authenticate(npsso: str) -> tuple[object, dict]:
+    """Authenticate with PSN and return the client plus its persisted token response."""
     try:
         from psnawp_api import PSNAWP
     except ImportError as exc:
@@ -38,9 +39,33 @@ def fetch_library(npsso: str) -> dict:
 
     psn = PSNAWP(npsso)
     client = psn.me()
+    _ = client.account_id
+    token_response = dict(psn.authenticator.token_response or {})
+    if not token_response.get("refresh_token"):
+        raise RuntimeError("PlayStation did not return a refresh token")
+    return client, token_response
 
-    online_id = client.online_id
-    account_id = client.account_id
+def fetch_library(npsso: str, token_response: dict | None = None) -> dict:
+    try:
+        from psnawp_api import PSNAWP
+    except ImportError as exc:
+        raise RuntimeError("PSNAWP is not installed") from exc
+
+    psn = PSNAWP(npsso)
+    if token_response:
+        psn.authenticator.token_response = dict(token_response)
+    client = psn.me()
+
+    try:
+        online_id = client.online_id
+        account_id = client.account_id
+    except Exception:
+        if not token_response:
+            raise
+        psn = PSNAWP(npsso)
+        client = psn.me()
+        online_id = client.online_id
+        account_id = client.account_id
 
     # title_stats supplies PS4/PS5 playtime and last-played information.
     # Keep this independent from trophy_titles: a temporary trophy API failure
@@ -165,4 +190,5 @@ def fetch_library(npsso: str) -> dict:
         "online_id": online_id,
         "account_id": account_id,
         "games": list(merged.values()),
+        "token_response": dict(psn.authenticator.token_response or {}),
     }

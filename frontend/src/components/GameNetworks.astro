@@ -28,15 +28,25 @@ const { token } = Astro.locals;
       </p>
 
       <div id="psn-connect-form" class="mt-4 space-y-3">
-        <input id="psn-npsso" type="password" autocomplete="off"
-          placeholder="Paste your PSN NPSSO token"
-          class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-500" />
         <button id="psn-connect-btn" type="button"
           class="w-full px-4 py-3 rounded-xl bg-zinc-100 text-zinc-950 font-black text-sm hover:bg-white disabled:opacity-50">
-          Connect PlayStation
+          Connect with PlayStation
         </button>
+        <div id="psn-browser-panel" class="hidden rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 space-y-3">
+          <p class="text-sm font-semibold text-zinc-200">Sign in to PlayStation</p>
+          <ol class="text-xs text-zinc-500 space-y-1.5 list-decimal list-inside">
+            <li>Open PlayStation and sign in normally.</li>
+            <li>Drag the <a id="psn-bookmarklet" href="#" class="text-sky-400 hover:text-sky-300 underline font-semibold">Scrob PSN Login</a> link to your bookmarks bar.</li>
+            <li>While still on a PlayStation/Sony page, click that bookmark once.</li>
+          </ol>
+          <div class="flex flex-wrap gap-2">
+            <a id="psn-open-btn" href="https://www.playstation.com/" target="_blank" rel="noopener noreferrer" class="px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs font-bold hover:bg-zinc-700">Open PlayStation</a>
+            <button id="psn-copy-bookmarklet" type="button" class="px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs font-bold hover:bg-zinc-700">Copy bookmarklet</button>
+          </div>
+          <p id="psn-browser-status" class="text-[11px] text-zinc-500">Waiting for your PlayStation login…</p>
+          <p class="text-[10px] text-zinc-600">Scrob never receives your PSN password. The bookmarklet only reads the Sony session cookie and sends it through a one-time login state.</p>
+        </div>
       </div>
-
       <div id="psn-connected-actions" class="hidden mt-4 flex items-center gap-2 flex-wrap">
         <button id="psn-sync-btn" type="button"
           class="px-4 py-2.5 rounded-xl bg-sky-500 text-white font-black text-sm hover:bg-sky-400 disabled:opacity-50">
@@ -51,7 +61,7 @@ const { token } = Astro.locals;
       <p id="psn-message" class="hidden mt-3 text-xs"></p>
       <p id="psn-sync-status" class="text-[11px] text-zinc-600 mt-3"></p>
       <p class="text-[11px] text-zinc-600 mt-4">
-        Your NPSSO is sent only to the Scrob backend and is never shown again.
+        Scrob uses the Sony browser session to obtain and persist the PSN refresh token. Your PSN password never reaches Scrob.
       </p>
     </article>
 
@@ -327,32 +337,73 @@ const { token } = Astro.locals;
     }
   }
 
-  document.getElementById("psn-connect-btn")?.addEventListener("click", async () => {
-    const input = document.getElementById("psn-npsso");
+  let psnBrowserState = "";
+
+  const buildPsnBookmarklet = (state) => {
+    const target = window.location.origin + "/api/proxy/psn/browser/complete";
+    const code = [
+      "(async()=>{",
+      "const m=document.cookie.match(/(?:^|;\\s*)npsso=([^;]+)/);",
+      'if(!m){alert("No PSN session cookie found. Please sign in to PlayStation first.");return;}',
+      "try{",
+      "await fetch(" + JSON.stringify(target) + ",{method:\"POST\",mode:\"no-cors\",headers:{\"Content-Type\":\"text/plain\"},body:" + JSON.stringify(state) + "+\"|\"+location.hostname+\"|\"+decodeURIComponent(m[1])});",
+      'alert("Scrob: PlayStation login sent. Return to Scrob.");',
+      '}catch(e){alert("Scrob: Could not send the PlayStation login.");}',
+      "})()",
+    ].join("");
+    return "javascript:" + encodeURIComponent(code);
+  };
+
+  const startPsnBrowserLogin = async () => {
     const button = document.getElementById("psn-connect-btn");
-    const npsso = input.value.trim();
-    if (!npsso) return setMessage("Please paste your NPSSO token.", true);
+    const panel = document.getElementById("psn-browser-panel");
+    const statusEl = document.getElementById("psn-browser-status");
+    const bookmarklet = document.getElementById("psn-bookmarklet");
+    const openBtn = document.getElementById("psn-open-btn");
+    const copyBtn = document.getElementById("psn-copy-bookmarklet");
+    if (!button || !panel || !statusEl || !bookmarklet || !openBtn || !copyBtn) return;
 
     button.disabled = true;
-    setMessage("Checking PlayStation authentication…");
-
+    setMessage("Preparing PlayStation sign-in…");
     try {
-      const res = await api("/psn/connect", {
-        method: "POST",
-        body: JSON.stringify({ npsso }),
-      });
-      if (!res.ok) throw new Error(await readError(res, "PlayStation authentication failed."));
+      const res = await api("/psn/browser/start", { method: "POST" });
+      if (!res.ok) throw new Error(await readError(res, "Could not start PlayStation authentication."));
       const data = await res.json();
-      input.value = "";
-      setMessage("Connected as " + data.online_id + ". You can now sync your games.");
-      await refreshStatus();
+      psnBrowserState = data.state;
+      const href = buildPsnBookmarklet(psnBrowserState);
+      bookmarklet.href = href;
+      copyBtn.onclick = async () => {
+        await navigator.clipboard.writeText(href);
+        copyBtn.textContent = "Copied";
+        setTimeout(() => { copyBtn.textContent = "Copy bookmarklet"; }, 1500);
+      };
+      openBtn.href = data.playstation_url;
+      panel.classList.remove("hidden");
+      statusEl.textContent = "Waiting for the PlayStation session…";
+      window.open(data.playstation_url, "_blank", "noopener,noreferrer");
+      const deadline = Date.now() + (data.expires_in * 1000);
+      while (Date.now() < deadline && psnBrowserState) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const poll = await api("/psn/browser/status?state=" + encodeURIComponent(psnBrowserState));
+        if (!poll.ok) throw new Error(await readError(poll, "PlayStation login failed."));
+        const result = await poll.json();
+        if (result.status === "completed") {
+          psnBrowserState = "";
+          statusEl.textContent = "Connected as " + result.online_id + ".";
+          setMessage("PlayStation connected. You can now sync your games.");
+          await refreshStatus();
+          return;
+        }
+      }
+      throw new Error("PlayStation login timed out. Start the connection again.");
     } catch (error) {
       setMessage(error?.message || "PlayStation authentication failed.", true);
     } finally {
       button.disabled = false;
     }
-  });
+  };
 
+  document.getElementById("psn-connect-btn")?.addEventListener("click", startPsnBrowserLogin);
   document.getElementById("psn-sync-btn")?.addEventListener("click", async () => {
     const button = document.getElementById("psn-sync-btn");
     button.disabled = true;
