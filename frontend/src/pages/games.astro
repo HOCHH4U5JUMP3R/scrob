@@ -78,8 +78,8 @@ try {
     )}
   </div>
 
-  <script define:vars={{ token }}>
-    const apiBase = "";
+  <script define:vars={{ token, backendPort: import.meta.env.BACKEND_PORT ?? "7331" }}>
+    const apiBase = `http://localhost:${backendPort}`;
     const headers = () => ({ Authorization: `Bearer ${token}`, "Content-Type": "application/json" });
     const badge = document.getElementById("psn-badge");
     const title = document.getElementById("psn-status-title");
@@ -93,7 +93,7 @@ try {
     };
 
     async function refreshStatus() {
-      const res = await fetch("/psn/status", { headers: headers() });
+      const res = await fetch(`${apiBase}/psn/status`, { headers: headers() });
       if (!res.ok) return;
       const data = await res.json();
       if (data.connected) {
@@ -114,7 +114,7 @@ try {
       button.disabled = true;
       setMessage("Connecting to PlayStation Network…");
       try {
-        const res = await fetch("/psn/connect", { method: "POST", headers: headers(), body: JSON.stringify({ npsso }) });
+        const res = await fetch(`${apiBase}/psn/connect`, { method: "POST", headers: headers(), body: JSON.stringify({ npsso }) });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || "Connection failed");
         setMessage(`Connected as ${data.online_id}. Found ${data.games_found} games.`);
@@ -133,7 +133,7 @@ try {
       button.disabled = true;
       setMessage("Syncing your PlayStation library…");
       try {
-        const res = await fetch("/psn/sync", { method: "POST", headers: headers() });
+        const res = await fetch(`${apiBase}/psn/sync`, { method: "POST", headers: headers() });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || "Sync failed");
         setMessage(`Synced ${data.games_imported} games. Reloading…`);
@@ -147,7 +147,7 @@ try {
 
     document.getElementById("psn-sync-btn")?.addEventListener("click", sync);
     document.getElementById("psn-disconnect-btn")?.addEventListener("click", async () => {
-      await fetch("/psn/disconnect", { method: "DELETE", headers: headers() });
+      await fetch(`${apiBase}/psn/disconnect`, { method: "DELETE", headers: headers() });
       location.reload();
     });
     refreshStatus();
