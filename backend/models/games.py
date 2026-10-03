@@ -24,7 +24,7 @@ class Game(Base):
     backdrop_path: Mapped[Optional[str]] = mapped_column(String(500))
     release_date: Mapped[Optional[Date]] = mapped_column(Date)
     genres: Mapped[Optional[list]] = mapped_column(JSONB)
-    metadata: Mapped[Optional[dict]] = mapped_column(JSONB)
+    metadata_json: Mapped[Optional[dict]] = mapped_column("metadata", JSONB)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
@@ -60,6 +60,6 @@ class GamePlatform(Base):
     external_id: Mapped[str] = mapped_column(String(255), nullable=False)
     platform_name: Mapped[Optional[str]] = mapped_column(String(100))
     external_url: Mapped[Optional[str]] = mapped_column(String(500))
-    metadata: Mapped[Optional[dict]] = mapped_column(JSONB)
+    metadata_json: Mapped[Optional[dict]] = mapped_column("metadata", JSONB)
 
     game: Mapped["Game"] = relationship(back_populates="platforms")
