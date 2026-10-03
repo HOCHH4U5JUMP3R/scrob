@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from sqlalchemy.ext.asyncio import AsyncSession
 from db import engine, Base
 import models # noqa: F401
-from routers import webhooks, media, history, ratings, sync, shows, auth, lists, oidc, profile, trakt, simkl, mdblist, bingebase, comments, admin, compat, export, yamtrack, calendar, games, psn, xbox
+from routers import webhooks, media, history, ratings, sync, shows, auth, lists, oidc, profile, trakt, simkl, mdblist, bingebase, comments, admin, compat, export, yamtrack, calendar, games, psn, xbox, steam
 
 from core.access_log import install as install_access_log_redaction
 install_access_log_redaction()
@@ -285,7 +285,8 @@ async def _auto_sync_scheduler():
                 try:
                     from routers.psn import run_psn_sync
                     from routers.xbox import run_xbox_sync
-                    game_runners = {"psn": run_psn_sync, "xbox": run_xbox_sync}
+                    from routers.steam import run_steam_sync
+                    game_runners = {"psn": run_psn_sync, "xbox": run_xbox_sync, "steam": run_steam_sync}
                 except Exception as import_error:
                     print(f"Game sync scheduler: failed to import runners: {import_error}")
                     game_runners = {}
@@ -831,6 +832,7 @@ app.include_router(calendar.router, prefix="/calendar", tags=["calendar"])
 app.include_router(games.router, prefix="/games", tags=["games"])
 app.include_router(psn.router, prefix="/psn", tags=["playstation"])
 app.include_router(xbox.router, prefix="/xbox", tags=["xbox"])
+app.include_router(steam.router, prefix="/steam", tags=["steam"])
 app.include_router(compat.router, tags=["compat"])
 
 @app.get("/health")
