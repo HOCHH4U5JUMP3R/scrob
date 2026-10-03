@@ -13,7 +13,13 @@ const { token } = Astro.locals;
             <p id="psn-status" class="text-xs text-zinc-500 mt-0.5">Checking connection…</p>
           </div>
         </div>
-        <span id="psn-badge" class="px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-500 text-[10px] font-black uppercase tracking-wider">Offline</span>
+        <div class="flex items-center gap-2">
+          <span id="psn-badge" class="px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-500 text-[10px] font-black uppercase tracking-wider">Offline</span>
+          <button id="psn-disconnect-btn" type="button"
+            class="hidden px-2.5 py-1.5 rounded-lg border border-zinc-800 text-zinc-500 text-[11px] font-bold hover:border-zinc-600 hover:text-zinc-200 transition">
+            Disconnect
+          </button>
+        </div>
       </div>
 
       <p 
@@ -48,10 +54,6 @@ const { token } = Astro.locals;
             <option value="">Off</option><option value="0.25">Every 15 minutes</option><option value="0.5">Every 30 minutes</option><option value="1">Every hour</option><option value="3">Every 3 hours</option><option value="6">Every 6 hours</option><option value="12">Every 12 hours</option><option value="24">Every 24 hours</option>
           </select>
         </label>
-        <button id="psn-disconnect-btn" type="button"
-          class="px-2.5 py-1.5 rounded-lg border border-zinc-800 text-zinc-500 text-[11px] font-bold hover:border-zinc-600 hover:text-zinc-200 transition">
-          Disconnect
-        </button>
       </div>
         
 
@@ -68,7 +70,13 @@ const { token } = Astro.locals;
             <p id="xbox-status" class="text-xs text-zinc-500 mt-0.5">Checking connection…</p>
           </div>
         </div>
-        <span id="xbox-badge" class="px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-500 text-[10px] font-black uppercase tracking-wider">Offline</span>
+        <div class="flex items-center gap-2">
+          <span id="xbox-badge" class="px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-500 text-[10px] font-black uppercase tracking-wider">Offline</span>
+          <button id="xbox-disconnect-btn" type="button"
+            class="hidden px-2.5 py-1.5 rounded-lg border border-zinc-800 text-zinc-500 text-[11px] font-bold hover:border-zinc-600 hover:text-zinc-200 transition">
+            Disconnect
+          </button>
+        </div>
       </div>
 
       <p 
