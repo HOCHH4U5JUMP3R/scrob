@@ -67,6 +67,15 @@ class UserSettings(Base):
     sonarr_season_folder    : Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     sonarr_customize_on_add : Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
 
+    # PlayStation Network connection
+    psn_npsso              : Mapped[Optional[str]] = mapped_column(String(255))
+    psn_online_id         : Mapped[Optional[str]] = mapped_column(String(100))
+    psn_account_id        : Mapped[Optional[str]] = mapped_column(String(100))
+    psn_connected_at      : Mapped[Optional[datetime]] = mapped_column(DateTime)
+    psn_last_sync_at      : Mapped[Optional[datetime]] = mapped_column(DateTime)
+    psn_last_sync_count   : Mapped[Optional[int]] = mapped_column(Integer)
+    psn_last_sync_error   : Mapped[Optional[str]] = mapped_column(String(500))
+
     # Trakt OAuth app credentials (per-user)
     trakt_client_id          : Mapped[Optional[str]]      = mapped_column(String(255))
     trakt_client_secret      : Mapped[Optional[str]]      = mapped_column(String(255))
