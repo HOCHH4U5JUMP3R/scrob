@@ -7,162 +7,59 @@ const { token } = Astro.locals;
     <article class="rounded-2xl border border-zinc-800 bg-zinc-900/70 overflow-hidden">
       <div class="flex items-center justify-between gap-4 px-6 py-4">
         <div class="flex items-center gap-3">
-          <div class="w-11 h-11 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center" style="color: #003791"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M8.984 2.596v17.547l3.915 1.261V6.688c0-.69.304-1.151.794-.991.636.18.76.814.76 1.505v5.875c2.441 1.193 4.362-.002 4.362-3.152 0-3.237-1.126-4.675-4.438-5.827-1.307-.448-3.728-1.186-5.39-1.502zm4.656 16.241 6.296-2.275c.715-.258.826-.625.246-.818-.586-.192-1.637-.139-2.357.123l-4.205 1.5V14.98l.24-.085s1.201-.42 2.913-.615c1.696-.18 3.785.03 5.437.661 1.848.601 2.04 1.472 1.576 2.072-.465.6-1.622 1.036-1.622 1.036l-8.544 3.107V18.86zM1.807 18.6c-1.9-.545-2.214-1.668-1.352-2.32.801-.586 2.16-1.052 2.16-1.052l5.615-2.013v2.313L4.205 17c-.705.271-.825.632-.239.826.586.195 1.637.15 2.343-.12L8.247 17v2.074c-.12.03-.256.044-.39.073-1.939.331-3.996.196-6.038-.479z"/></svg></div>
-          <div>
-            <h3 class="font-bold text-zinc-100">PlayStation Network</h3>
-            <p id="psn-status" class="text-xs text-zinc-500 mt-0.5">Checking connection…</p>
+          <div class="w-11 h-11 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-[#003791]">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M8.984 2.596v17.547l3.915 1.261V6.688c0-.69.304-1.151.794-.991.636.18.76.814.76 1.505v5.875c2.441 1.193 4.362-.002 4.362-3.152 0-3.237-1.126-4.675-4.438-5.827-1.307-.448-3.728-1.186-5.39-1.502zm4.656 16.241 6.296-2.275c.715-.258.826-.625.246-.818-.586-.192-1.637-.139-2.357.123l-4.205 1.5V14.98l.24-.085s1.201-.42 2.913-.615c1.696-.18 3.785.03 5.437.661 1.848.601 2.04 1.472 1.576 2.072-.465.6-1.622 1.036-1.622 1.036l-8.544 3.107V18.86zM1.807 18.6c-1.9-.545-2.214-1.668-1.352-2.32.801-.586 2.16-1.052 2.16-1.052l5.615-2.013v2.313L4.205 17c-.705.271-.825.632-.239.826.586.195 1.637.15 2.343-.12L8.247 17v2.074c-.12.03-.256.044-.39.073-1.939.331-3.996.196-6.038-.479z"/></svg>
           </div>
+          <div><h3 class="font-bold text-zinc-100">PlayStation Network</h3><p id="psn-status" class="text-xs text-zinc-500 mt-0.5">Checking connection…</p></div>
         </div>
-        <div class="flex items-center gap-2">
-          <span id="psn-badge" class="px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-500 text-[10px] font-black uppercase tracking-wider">Offline</span>
-          <button id="psn-disconnect-btn" type="button"
-            class="hidden px-2.5 py-1.5 rounded-lg border border-zinc-800 text-zinc-500 text-[11px] font-bold hover:border-zinc-600 hover:text-zinc-200 transition">
-            Disconnect
-          </button>
-        </div>
+        <div class="flex items-center gap-2"><span id="psn-badge" class="px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-500 text-[10px] font-black uppercase tracking-wider">Offline</span><button id="psn-disconnect-btn" type="button" class="hidden px-2.5 py-1.5 rounded-lg border border-zinc-800 text-zinc-500 text-[11px] font-bold hover:text-zinc-200">Disconnect</button></div>
       </div>
-
-      <p 
       <div id="psn-connect-form" class="px-6 pb-6 space-y-3">
-        <button id="psn-connect-btn" type="button"
-          class="w-full px-4 py-3 rounded-xl bg-zinc-100 text-zinc-950 font-black text-sm hover:bg-white disabled:opacity-50">
-          Connect with PlayStation
-        </button>
+        <button id="psn-connect-btn" type="button" class="w-full px-4 py-3 rounded-xl bg-zinc-100 text-zinc-950 font-black text-sm hover:bg-white">Connect with PlayStation</button>
         <div id="psn-browser-panel" class="hidden rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 space-y-3">
           <p class="text-sm font-semibold text-zinc-200">Sign in to PlayStation</p>
-          <ol class="text-xs text-zinc-500 space-y-1.5 list-decimal list-inside">
-            <li>Open PlayStation and sign in normally.</li>
-            <li>Drag the <a id="psn-bookmarklet" href="#" class="text-sky-400 hover:text-sky-300 underline font-semibold">Scrob PSN Login</a> link to your bookmarks bar.</li>
-            <li>While still on a PlayStation/Sony page, click that bookmark once.</li>
-          </ol>
-          <div class="flex flex-wrap gap-2">
-            <a id="psn-open-btn" href="https://www.playstation.com/" target="_blank" rel="noopener noreferrer" class="px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs font-bold hover:bg-zinc-700">Open PlayStation</a>
-            <button id="psn-copy-bookmarklet" type="button" class="px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs font-bold hover:bg-zinc-700">Copy bookmarklet</button>
-          </div>
+          <ol class="text-xs text-zinc-500 space-y-1.5 list-decimal list-inside"><li>Open PlayStation and sign in normally.</li><li>Drag <a id="psn-bookmarklet" href="#" class="text-sky-400 underline">Scrob PSN Login</a> to your bookmarks.</li><li>Click the bookmark while on a PlayStation/Sony page.</li></ol>
+          <div class="flex flex-wrap gap-2"><a id="psn-open-btn" href="https://www.playstation.com/" target="_blank" rel="noopener noreferrer" class="px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs font-bold">Open PlayStation</a><button id="psn-copy-bookmarklet" type="button" class="px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs font-bold">Copy bookmarklet</button></div>
           <p id="psn-browser-status" class="text-[11px] text-zinc-500">Waiting for your PlayStation login…</p>
-          <p class="text-[10px] text-zinc-600">Scrob never receives your PSN password. The bookmarklet only reads the Sony session cookie and sends it through a one-time login state.</p>
         </div>
       </div>
-      <div id="psn-connected-actions" class="hidden px-6 pb-2 pt-1 flex items-center gap-2 flex-wrap">
-        <button id="psn-sync-btn" type="button"
-          class="px-4 py-2.5 rounded-xl bg-sky-500 text-white font-black text-sm hover:bg-sky-400 disabled:opacity-50">
-          Sync games
-        </button>
-<label class="flex items-center gap-2 text-xs text-zinc-500">
-          Auto sync
-          <select id="psn-auto-sync" class="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-300">
-            <option value="">Off</option><option value="0.25">Every 15 minutes</option><option value="0.5">Every 30 minutes</option><option value="1">Every hour</option><option value="3">Every 3 hours</option><option value="6">Every 6 hours</option><option value="12">Every 12 hours</option><option value="24">Every 24 hours</option>
-          </select>
-        </label>
-      </div>
-        
-
-      <p id="psn-message" class="hidden px-6 mt-3 text-xs"></p>
-      <p id="psn-sync-status" class="px-6 text-[11px] text-zinc-600 mt-3"></p>
-      <p     </article>
-
-    <article class="rounded-2xl border border-zinc-800 bg-zinc-900/70 overflow-hidden">
-      <div class="flex items-start justify-between gap-4">
-        <div class="flex items-center gap-3">
-          <div class="w-11 h-11 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center" style="color: #107C10"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M4.102 21.033A11.95 11.95 0 0 0 12 24a11.96 11.96 0 0 0 7.902-2.967c1.877-1.912-4.316-8.709-7.902-11.417-3.582 2.708-9.779 9.505-7.898 11.417m11.16-14.406c2.5 2.961 7.484 10.313 6.076 12.912A11.94 11.94 0 0 0 24 12.004a11.95 11.95 0 0 0-3.57-8.536s-.027-.022-.082-.042a.8.8 0 0 0-.281-.045c-.592 0-1.985.434-4.805 3.246M3.654 3.426c-.057.02-.082.042-.086.042A11.96 11.96 0 0 0 0 12.004c0 2.854.998 5.473 2.661 7.533-1.401-2.605 3.579-9.951 6.08-12.91-2.82-2.813-4.216-3.245-4.806-3.245a.7.7 0 0 0-.281.046zM12 3.551S9.055 1.828 6.755 1.746c-.903-.033-1.454.295-1.521.339C7.379.646 9.659 0 11.984 0H12c2.334 0 4.605.646 6.766 2.085-.068-.046-.615-.372-1.52-.339C14.946 1.828 12 3.545 12 3.545z"/></svg></div>
-          <div>
-            <h3 class="font-bold text-zinc-100">Xbox Network</h3>
-            <p id="xbox-status" class="text-xs text-zinc-500 mt-0.5">Checking connection…</p>
-          </div>
-        </div>
-        <div class="flex items-center gap-2">
-          <span id="xbox-badge" class="px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-500 text-[10px] font-black uppercase tracking-wider">Offline</span>
-          <button id="xbox-disconnect-btn" type="button"
-            class="hidden px-2.5 py-1.5 rounded-lg border border-zinc-800 text-zinc-500 text-[11px] font-bold hover:border-zinc-600 hover:text-zinc-200 transition">
-            Disconnect
-          </button>
-        </div>
-      </div>
-
-      <p 
-      <div id="xbox-connect-form" class="px-6 pb-6 space-y-3">
-        <button id="xbox-connect-btn" type="button"
-          class="w-full px-4 py-3 rounded-xl bg-zinc-100 text-zinc-950 font-black text-sm hover:bg-white disabled:opacity-50">
-          Connect Xbox
-        </button>
-        <div id="xbox-complete-form" class="hidden space-y-2">
-          <p class="text-xs text-zinc-500">
-            After signing in, Microsoft redirects to localhost. Copy the complete URL from the browser address bar and paste it here.
-          </p>
-          <input id="xbox-code" type="text" autocomplete="off"
-            placeholder="Paste the Microsoft redirect URL or authorization code"
-            class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-500" />
-          <button id="xbox-complete-btn" type="button"
-            class="w-full px-4 py-3 rounded-xl bg-sky-500 text-white font-black text-sm hover:bg-sky-400 disabled:opacity-50">
-            Complete Xbox connection
-          </button>
-        </div>
-      </div>
-
-      <div id="xbox-connected-actions" class="hidden px-6 pb-4 flex items-center gap-2 flex-wrap">
-        <button id="xbox-sync-btn" type="button"
-          class="px-4 py-2.5 rounded-xl bg-sky-500 text-white font-black text-sm hover:bg-sky-400 disabled:opacity-50">
-          Sync games
-        </button>
-<label class="flex items-center gap-2 text-xs text-zinc-500">
-          Auto sync
-          <select id="xbox-auto-sync" class="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-300">
-            <option value="">Off</option><option value="0.25">Every 15 minutes</option><option value="0.5">Every 30 minutes</option><option value="1">Every hour</option><option value="3">Every 3 hours</option><option value="6">Every 6 hours</option><option value="12">Every 12 hours</option><option value="24">Every 24 hours</option>
-          </select>
-        </label>
-        <button id="xbox-disconnect-btn" type="button"
-          class="px-4 py-2.5 rounded-xl border border-zinc-700 text-zinc-400 font-bold text-sm hover:text-white">
-          Disconnect
-        </button>
-      </div>
-        
-
-      <p id="xbox-message" class="hidden px-6 mt-3 text-xs"></p>
-      <p id="xbox-sync-status" class="px-6 text-[11px] text-zinc-600 mt-3"></p>
-      <p     </article>
+      <details id="psn-connected-actions" class="hidden border-t border-zinc-800">
+        <summary class="cursor-pointer list-none px-6 py-3 text-xs font-bold text-zinc-400 hover:text-zinc-200 flex justify-between"><span>Sync & Auto Sync</span><span>⌄</span></summary>
+        <div class="px-6 pb-4 flex items-center gap-3 flex-wrap"><button id="psn-sync-btn" type="button" class="px-4 py-2.5 rounded-xl bg-sky-500 text-white font-black text-sm">Sync games</button><label class="flex items-center gap-2 text-xs text-zinc-500">Auto sync<select id="psn-auto-sync" class="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-300"><option value="">Off</option><option value="0.25">Every 15 minutes</option><option value="0.5">Every 30 minutes</option><option value="1">Every hour</option><option value="3">Every 3 hours</option><option value="6">Every 6 hours</option><option value="12">Every 12 hours</option><option value="24">Every 24 hours</option></select></label></div>
+      </details>
+      <p id="psn-message" class="hidden px-6 mt-3 text-xs"></p><p id="psn-sync-status" class="px-6 pb-5 text-[10px] text-zinc-600 mt-1">Not synced yet.</p>
+    </article>
 
     <article class="rounded-2xl border border-zinc-800 bg-zinc-900/70 overflow-hidden">
       <div class="flex items-center justify-between gap-4 px-6 py-4">
         <div class="flex items-center gap-3">
-          <div class="w-11 h-11 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-zinc-300">
-            <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.605 0 11.979 0z"/></svg>
-          </div>
-          <div>
-            <h3 class="font-bold text-zinc-100">Steam</h3>
-            <p id="steam-status" class="text-xs text-zinc-500 mt-0.5">Checking connection…</p>
-          </div>
+          <div class="w-11 h-11 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-[#107C10]"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M4.102 21.033A11.95 11.95 0 0 0 12 24a11.96 11.96 0 0 0 7.902-2.967c1.877-1.912-4.316-8.709-7.902-11.417-3.582 2.708-9.779 9.505-7.898 11.417m11.16-14.406c2.5 2.961 7.484 10.313 6.076 12.912A11.94 11.94 0 0 0 24 12.004a11.95 11.95 0 0 0-3.57-8.536s-.027-.022-.082-.042c-.592 0-1.985.434-4.805 3.246M3.654 3.426c-.057.02-.082.042-.086.042A11.96 11.96 0 0 0 0 12.004c0 2.854.998 9.951 6.08-12.91-2.82-2.813-4.216-3.245-4.806-3.245a.7.7 0 0 0-.281.046zM12 3.551S9.055 1.828 6.755 1.746c-.903-.033-1.454.295-1.521.339C14.946 1.828 12 3.545 12 3.545z"/></svg></div>
+          <div><h3 class="font-bold text-zinc-100">Xbox Network</h3><p id="xbox-status" class="text-xs text-zinc-500 mt-0.5">Checking connection…</p></div>
         </div>
-        <div class="flex items-center gap-2">
-          <span id="steam-badge" class="px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-500 text-[10px] font-black uppercase tracking-wider">Offline</span>
-          <button id="steam-disconnect-btn" type="button" class="hidden px-2.5 py-1.5 rounded-lg border border-zinc-800 text-zinc-500 text-[11px] font-bold hover:border-zinc-600 hover:text-zinc-200 transition">Disconnect</button>
-        </div>
+        <div class="flex items-center gap-2"><span id="xbox-badge" class="px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-500 text-[10px] font-black uppercase tracking-wider">Offline</span><button id="xbox-disconnect-btn" type="button" class="hidden px-2.5 py-1.5 rounded-lg border border-zinc-800 text-zinc-500 text-[11px] font-bold hover:text-zinc-200">Disconnect</button></div>
       </div>
-      <div id="steam-connect-form" class="px-6 pb-6">
-        <button id="steam-connect-btn" type="button" class="w-full px-4 py-3 rounded-xl bg-zinc-100 text-zinc-950 font-black text-sm hover:bg-white disabled:opacity-50">Connect with Steam</button>
-        <p class="text-[11px] text-zinc-600 mt-2">Sign in through Steam in your browser. Your Steam password never reaches Scrob. Your Steam profile and game details must be public.</p>
+      <div id="xbox-connect-form" class="px-6 pb-6 space-y-3">
+        <button id="xbox-connect-btn" type="button" class="w-full px-4 py-3 rounded-xl bg-zinc-100 text-zinc-950 font-black text-sm hover:bg-white">Connect Xbox</button>
+        <div id="xbox-complete-form" class="hidden space-y-2"><input id="xbox-code" type="text" autocomplete="off" placeholder="Paste the Microsoft redirect URL or authorization code" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100"/><button id="xbox-complete-btn" type="button" class="w-full px-4 py-3 rounded-xl bg-sky-500 text-white font-black text-sm">Complete Xbox connection</button></div>
       </div>
-      <details id="steam-connected-actions" class="hidden border-t border-zinc-800">
-        <summary class="cursor-pointer list-none px-6 py-3 text-xs font-bold text-zinc-400 hover:text-zinc-200 flex items-center justify-between"><span>Sync & Auto Sync</span><span class="text-zinc-600">⌄</span></summary>
-        <div class="px-6 pb-4 flex items-center gap-3 flex-wrap">
-          <button id="steam-sync-btn" type="button" class="px-4 py-2.5 rounded-xl bg-sky-500 text-white font-black text-sm hover:bg-sky-400 disabled:opacity-50">Sync games</button>
-          <label class="flex items-center gap-2 text-xs text-zinc-500">Auto sync
-            <select id="steam-auto-sync" class="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-300">
-              <option value="">Off</option><option value="0.25">Every 15 minutes</option><option value="0.5">Every 30 minutes</option><option value="1">Every hour</option><option value="3">Every 3 hours</option><option value="6">Every 6 hours</option><option value="12">Every 12 hours</option><option value="24">Every 24 hours</option>
-            </select>
-          </label>
-        </div>
+      <details id="xbox-connected-actions" class="hidden border-t border-zinc-800">
+        <summary class="cursor-pointer list-none px-6 py-3 text-xs font-bold text-zinc-400 hover:text-zinc-200 flex justify-between"><span>Sync & Auto Sync</span><span>⌄</span></summary>
+        <div class="px-6 pb-4 flex items-center gap-3 flex-wrap"><button id="xbox-sync-btn" type="button" class="px-4 py-2.5 rounded-xl bg-sky-500 text-white font-black text-sm">Sync games</button><label class="flex items-center gap-2 text-xs text-zinc-500">Auto sync<select id="xbox-auto-sync" class="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-300"><option value="">Off</option><option value="0.25">Every 15 minutes</option><option value="0.5">Every 30 minutes</option><option value="1">Every hour</option><option value="3">Every 3 hours</option><option value="6">Every 6 hours</option><option value="12">Every 12 hours</option><option value="24">Every 24 hours</option></select></label></div>
       </details>
-      <p id="steam-message" class="hidden px-6 mt-3 text-xs"></p>
-      <p id="steam-sync-status" class="px-6 pb-5 text-[10px] text-zinc-600 mt-1">Not synced yet.</p>
+      <p id="xbox-message" class="hidden px-6 mt-3 text-xs"></p><p id="xbox-sync-status" class="px-6 pb-5 text-[10px] text-zinc-600 mt-1">Not synced yet.</p>
     </article>
 
-    <article class="rounded-2xl border border-zinc-800 bg-zinc-900/40 overflow-hidden opacity-80">
-      <div class="flex items-center gap-3 px-6 py-4">
-        <div class="w-11 h-11 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-xl">🎮</div>
-        <div><h3 class="font-bold text-zinc-200">Nintendo</h3><p class="text-xs text-zinc-500 mt-0.5">Nintendo game network integration</p></div>
-        <span class="ml-auto px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-600 text-[10px] font-black uppercase tracking-wider">Soon</span>
+    <article class="rounded-2xl border border-zinc-800 bg-zinc-900/70 overflow-hidden">
+      <div class="flex items-center justify-between gap-4 px-6 py-4">
+        <div class="flex items-center gap-3"><div class="w-11 h-11 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-zinc-300"><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.605 0 11.979 0z"/></svg></div><div><h3 class="font-bold text-zinc-100">Steam</h3><p id="steam-status" class="text-xs text-zinc-500 mt-0.5">Checking connection…</p></div></div>
+        <div class="flex items-center gap-2"><span id="steam-badge" class="px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-500 text-[10px] font-black uppercase tracking-wider">Offline</span><button id="steam-disconnect-btn" type="button" class="hidden px-2.5 py-1.5 rounded-lg border border-zinc-800 text-zinc-500 text-[11px] font-bold hover:text-zinc-200">Disconnect</button></div>
       </div>
+      <div id="steam-connect-form" class="px-6 pb-6"><button id="steam-connect-btn" type="button" class="w-full px-4 py-3 rounded-xl bg-zinc-100 text-zinc-950 font-black text-sm hover:bg-white">Connect with Steam</button><p class="text-[11px] text-zinc-600 mt-2">Sign in through Steam in your browser. Your Steam password never reaches Scrob. Your Steam profile and game details must be public.</p></div>
+      <details id="steam-connected-actions" class="hidden border-t border-zinc-800"><summary class="cursor-pointer list-none px-6 py-3 text-xs font-bold text-zinc-400 hover:text-zinc-200 flex justify-between"><span>Sync & Auto Sync</span><span>⌄</span></summary><div class="px-6 pb-4 flex items-center gap-3 flex-wrap"><button id="steam-sync-btn" type="button" class="px-4 py-2.5 rounded-xl bg-sky-500 text-white font-black text-sm">Sync games</button><label class="flex items-center gap-2 text-xs text-zinc-500">Auto sync<select id="steam-auto-sync" class="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-300"><option value="">Off</option><option value="0.25">Every 15 minutes</option><option value="0.5">Every 30 minutes</option><option value="1">Every hour</option><option value="3">Every 3 hours</option><option value="6">Every 6 hours</option><option value="12">Every 12 hours</option><option value="24">Every 24 hours</option></select></label></div></details>
+      <p id="steam-message" class="hidden px-6 mt-3 text-xs"></p><p id="steam-sync-status" class="px-6 pb-5 text-[10px] text-zinc-600 mt-1">Not synced yet.</p>
     </article>
+
+    <article class="rounded-2xl border border-zinc-800 bg-zinc-900/40 overflow-hidden opacity-80"><div class="flex items-center gap-3 px-6 py-4"><div class="w-11 h-11 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-xl">🎮</div><div><h3 class="font-bold text-zinc-200">Nintendo</h3><p class="text-xs text-zinc-500 mt-0.5">Nintendo game network integration</p></div><span class="ml-auto px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-600 text-[10px] font-black uppercase tracking-wider">Soon</span></div></article>
   </div>
 </section>
 
