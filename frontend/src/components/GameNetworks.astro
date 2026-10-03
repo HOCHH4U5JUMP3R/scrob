@@ -52,11 +52,18 @@ const { token } = Astro.locals;
           class="px-4 py-2.5 rounded-xl bg-sky-500 text-white font-black text-sm hover:bg-sky-400 disabled:opacity-50">
           Sync games
         </button>
+<label class="flex items-center gap-2 text-xs text-zinc-500">
+          Auto sync
+          <select id="psn-auto-sync" class="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-300">
+            <option value="">Off</option><option value="0.25">Every 15 minutes</option><option value="0.5">Every 30 minutes</option><option value="1">Every hour</option><option value="3">Every 3 hours</option><option value="6">Every 6 hours</option><option value="12">Every 12 hours</option><option value="24">Every 24 hours</option>
+          </select>
+        </label>
         <button id="psn-disconnect-btn" type="button"
           class="px-4 py-2.5 rounded-xl border border-zinc-700 text-zinc-400 font-bold text-sm hover:text-white">
           Disconnect
         </button>
       </div>
+        
 
       <p id="psn-message" class="hidden mt-3 text-xs"></p>
       <p id="psn-sync-status" class="text-[11px] text-zinc-600 mt-3"></p>
@@ -105,11 +112,18 @@ const { token } = Astro.locals;
           class="px-4 py-2.5 rounded-xl bg-sky-500 text-white font-black text-sm hover:bg-sky-400 disabled:opacity-50">
           Sync games
         </button>
+<label class="flex items-center gap-2 text-xs text-zinc-500">
+          Auto sync
+          <select id="xbox-auto-sync" class="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-300">
+            <option value="">Off</option><option value="0.25">Every 15 minutes</option><option value="0.5">Every 30 minutes</option><option value="1">Every hour</option><option value="3">Every 3 hours</option><option value="6">Every 6 hours</option><option value="12">Every 12 hours</option><option value="24">Every 24 hours</option>
+          </select>
+        </label>
         <button id="xbox-disconnect-btn" type="button"
           class="px-4 py-2.5 rounded-xl border border-zinc-700 text-zinc-400 font-bold text-sm hover:text-white">
           Disconnect
         </button>
       </div>
+        
 
       <p id="xbox-message" class="hidden mt-3 text-xs"></p>
       <p id="xbox-sync-status" class="text-[11px] text-zinc-600 mt-3"></p>
@@ -163,6 +177,21 @@ const { token } = Astro.locals;
   const xboxSyncStatus = document.getElementById("xbox-sync-status");
   const xboxCompleteForm = document.getElementById("xbox-complete-form");
   const xboxCode = document.getElementById("xbox-code");
+  const psnAutoSync = document.getElementById("psn-auto-sync");
+  const xboxAutoSync = document.getElementById("xbox-auto-sync");
+
+  const setAutoSync = async (network, value, select) => {
+    try {
+      const res = await api("/" + network + "/auto-sync", {
+        method: "POST",
+        body: JSON.stringify({ interval: value ? Number(value) : null }),
+      });
+      if (!res.ok) throw new Error(await readError(res, "Could not update auto sync."));
+      select.value = value || "";
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
   const setXboxMessage = (value, error = false) => {
     xboxMessage.textContent = value;
@@ -190,6 +219,7 @@ const { token } = Astro.locals;
       xboxStatus.textContent = data.gamertag ? "Connected as " + data.gamertag : "Connected";
       xboxForm.classList.add("hidden");
       xboxActions.classList.remove("hidden");
+      if (xboxAutoSync) xboxAutoSync.value = data.auto_sync_interval != null ? String(data.auto_sync_interval) : "";
 
       if (data.last_sync_error) {
         xboxSyncStatus.textContent = "Last sync failed: " + data.last_sync_error;
@@ -206,6 +236,9 @@ const { token } = Astro.locals;
       xboxStatus.textContent = error?.message || "Could not check connection";
     }
   };
+
+  psnAutoSync?.addEventListener("change", () => setAutoSync("psn", psnAutoSync.value, psnAutoSync));
+  xboxAutoSync?.addEventListener("change", () => setAutoSync("xbox", xboxAutoSync.value, xboxAutoSync));
 
   document.getElementById("xbox-connect-btn")?.addEventListener("click", async () => {
     const button = document.getElementById("xbox-connect-btn");
@@ -320,6 +353,7 @@ const { token } = Astro.locals;
       status.textContent = data.online_id ? "Connected as " + data.online_id : "Connected";
       form.classList.add("hidden");
       actions.classList.remove("hidden");
+      if (psnAutoSync) psnAutoSync.value = data.auto_sync_interval != null ? String(data.auto_sync_interval) : "";
 
       if (data.last_sync_error) {
         syncStatus.textContent = "Last sync failed: " + data.last_sync_error;

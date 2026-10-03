@@ -274,6 +274,82 @@ async def _auto_sync_scheduler():
                         )
                         asyncio.create_task(runner(settings_row.user_id, job_id))
 
+
+                # Games use the same SyncJob infrastructure as media players.
+                # The source remains "manual" for backwards-compatible enum storage;
+                # job_type identifies the game network (psn/xbox).
+                game_sync_config = [
+                    ("psn", "psn_auto_sync_interval", "psn_npsso"),
+                    ("xbox", "xbox_auto_sync_interval", "xbox_oauth_token"),
+                ]
+                try:
+                    from routers.psn import run_psn_sync
+                    from routers.xbox import run_xbox_sync
+                    game_runners = {"psn": run_psn_sync, "xbox": run_xbox_sync}
+                except Exception as import_error:
+                    print(f"Game sync scheduler: failed to import runners: {import_error}")
+                    game_runners = {}
+
+                if game_runners:
+                    game_settings_result = await db.execute(
+                        select(UserSettings).where(
+                            or_(
+                                UserSettings.psn_auto_sync_interval.isnot(None),
+                                UserSettings.xbox_auto_sync_interval.isnot(None),
+                            )
+                        )
+                    )
+                    for settings_row in game_settings_result.scalars().all():
+                        for job_type, interval_field, connected_field in game_sync_config:
+                            interval = getattr(settings_row, interval_field)
+                            if interval is None or not getattr(settings_row, connected_field):
+                                continue
+
+                            active_q = await db.execute(
+                                select(SyncJob)
+                                .where(
+                                    SyncJob.user_id == settings_row.user_id,
+                                    SyncJob.source == CollectionSource.manual,
+                                    SyncJob.job_type == job_type,
+                                    SyncJob.status.in_([SyncStatus.pending, SyncStatus.running]),
+                                )
+                                .limit(1)
+                            )
+                            if active_q.scalar_one_or_none():
+                                continue
+
+                            last_q = await db.execute(
+                                select(SyncJob)
+                                .where(
+                                    SyncJob.user_id == settings_row.user_id,
+                                    SyncJob.source == CollectionSource.manual,
+                                    SyncJob.job_type == job_type,
+                                    SyncJob.status.in_([SyncStatus.completed, SyncStatus.failed]),
+                                )
+                                .order_by(SyncJob.updated_at.desc())
+                                .limit(1)
+                            )
+                            last_job = last_q.scalar_one_or_none()
+                            next_run = last_job.updated_at + timedelta(hours=interval) if last_job else datetime.min
+                            if next_run > now:
+                                continue
+
+                            job = SyncJob(
+                                user_id=settings_row.user_id,
+                                source=CollectionSource.manual,
+                                status=SyncStatus.pending,
+                                job_type=job_type,
+                            )
+                            db.add(job)
+                            await db.flush()
+                            job_id = job.id
+                            await db.commit()
+                            print(
+                                f"Auto-game-sync: queuing {job_type} for user "
+                                f"{settings_row.user_id} (job {job_id})"
+                            )
+                            asyncio.create_task(game_runners[job_type](settings_row.user_id, job_id))
+
         except Exception as e:
             print(f"Auto-sync scheduler error: {e}")
             import traceback

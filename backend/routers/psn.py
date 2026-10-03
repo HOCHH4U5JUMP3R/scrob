@@ -6,7 +6,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -15,6 +15,8 @@ from db import get_db
 from dependencies import get_current_user
 from models.games import Game, GamePlatform, GameUserStats
 from models.users import User, UserSettings
+from models.sync import SyncJob, SyncStatus
+from db import async_sessionmaker, engine
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -110,6 +112,10 @@ async def psn_status(
     }
 
 
+class PSNAutoSyncRequest(BaseModel):
+    interval: float | None = Field(default=None, ge=0.25, le=48)
+
+
 @router.post("/connect")
 async def psn_connect(
     payload: PSNConnectRequest,
@@ -148,6 +154,20 @@ async def psn_connect(
     }
 
 
+@router.post("/auto-sync")
+async def psn_auto_sync(
+    payload: PSNAutoSyncRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    settings = await _get_settings(db, current_user.id)
+    if payload.interval is not None and not settings.psn_npsso:
+        raise HTTPException(status_code=400, detail="PlayStation is not connected.")
+    settings.psn_auto_sync_interval = payload.interval
+    await db.commit()
+    return {"auto_sync_interval": settings.psn_auto_sync_interval}
+
+
 @router.delete("/disconnect")
 async def psn_disconnect(
     db: AsyncSession = Depends(get_db),
@@ -168,107 +188,12 @@ async def psn_disconnect(
     return {"status": "disconnected"}
 
 
-@router.post("/browser/start")
-async def psn_browser_start(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    _prune_browser_logins()
-    state = secrets.token_urlsafe(32)
-    _browser_logins[state] = {"user_id": current_user.id, "created_at": time.time()}
-    return {
-        "state": state,
-        "playstation_url": "https://www.playstation.com/",
-        "expires_in": 600,
-    }
-
-
-@router.get("/browser/status")
-async def psn_browser_status(
-    state: str,
-    current_user: User = Depends(get_current_user),
-):
-    pending = _browser_logins.get(state)
-    if not pending or pending.get("user_id") != current_user.id:
-        raise HTTPException(status_code=404, detail="PlayStation login session not found or expired.")
-    status = pending.get("status", "pending")
-    if status == "completed":
-        _browser_logins.pop(state, None)
-        return {
-            "status": "completed",
-            "online_id": pending.get("online_id"),
-            "account_id": pending.get("account_id"),
-        }
-    if status == "error":
-        _browser_logins.pop(state, None)
-        raise HTTPException(status_code=400, detail=pending.get("error", "PlayStation browser login failed."))
-    return {"status": "pending"}
-
-
-@router.post("/browser/complete")
-async def psn_browser_complete(
-    payload: str = Body(..., media_type="text/plain"),
-    db: AsyncSession = Depends(get_db),
-):
-    parts = payload.strip().split("|", 2)
-    if len(parts) != 3:
-        raise HTTPException(status_code=400, detail="Invalid PlayStation browser login payload.")
-
-    state, hostname, npsso = parts
-    pending = _browser_logins.get(state)
-    if not pending or pending.get("created_at", 0) < time.time() - 600:
-        _browser_logins.pop(state, None)
-        raise HTTPException(status_code=400, detail="PlayStation login session expired.")
-
-    hostname = hostname.lower().rstrip(".")
-    if not (
-        hostname == "playstation.com"
-        or hostname.endswith(".playstation.com")
-        or hostname == "sony.com"
-        or hostname.endswith(".sony.com")
-    ):
-        raise HTTPException(status_code=400, detail="The browser handoff must run on a PlayStation or Sony page.")
-
-    try:
-        client, token_response = await asyncio.to_thread(authenticate, npsso.strip())
-        online_id = client.online_id
-        account_id = client.account_id
-        settings = await _get_settings(db, pending["user_id"])
-        settings.psn_npsso = npsso.strip()
-        _store_psn_auth(settings, token_response)
-        settings.psn_online_id = online_id
-        settings.psn_account_id = account_id
-        settings.psn_connected_at = settings.psn_connected_at or datetime.utcnow()
-        settings.psn_last_sync_error = None
-        await db.commit()
-        pending.update({
-            "status": "completed",
-            "online_id": online_id,
-            "account_id": account_id,
-        })
-        return {"status": "connected", "online_id": online_id, "account_id": account_id}
-    except Exception as exc:
-        logger.warning("PSN browser authentication failed: %s", exc)
-        pending.update({"status": "error", "error": f"PlayStation authentication failed: {type(exc).__name__}: {exc}"})
-        raise HTTPException(status_code=400, detail=pending["error"])
-
-@router.post("/sync")
-async def psn_sync(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    settings = await _get_settings(db, current_user.id)
+async def _sync_psn(db: AsyncSession, user_id: int) -> int:
+    settings = await _get_settings(db, user_id)
     if not settings.psn_npsso:
-        raise HTTPException(status_code=400, detail="PlayStation is not connected.")
+        raise RuntimeError("PlayStation is not connected.")
 
-    try:
-        data = await asyncio.to_thread(fetch_library, settings.psn_npsso, _psn_auth_from_settings(settings))
-    except Exception as exc:
-        logger.warning("PSN sync failed for user %s: %s", current_user.id, exc)
-        settings.psn_last_sync_error = f"PlayStation sync failed: {type(exc).__name__}: {exc}"
-        await db.commit()
-        raise HTTPException(status_code=400, detail=settings.psn_last_sync_error)
-
+    data = await asyncio.to_thread(fetch_library, settings.psn_npsso)
     settings.psn_online_id = data["online_id"]
     settings.psn_account_id = data["account_id"]
     if data.get("token_response"):
@@ -285,10 +210,7 @@ async def psn_sync(
         platform_q = await db.execute(
             select(GamePlatform)
             .options(selectinload(GamePlatform.game))
-            .where(
-                GamePlatform.platform == platform,
-                GamePlatform.external_id == external_id,
-            )
+            .where(GamePlatform.platform == platform, GamePlatform.external_id == external_id)
         )
         game_platform = platform_q.scalar_one_or_none()
 
@@ -306,7 +228,7 @@ async def psn_sync(
                 platform=platform,
                 external_id=external_id,
                 platform_name=platform_name,
-                external_url=f"https://store.playstation.com/",
+                external_url="https://store.playstation.com/",
                 metadata_json={"source": "psn"},
             )
             db.add(game_platform)
@@ -316,18 +238,14 @@ async def psn_sync(
 
         stats_q = await db.execute(
             select(GameUserStats).where(
-                GameUserStats.user_id == current_user.id,
+                GameUserStats.user_id == user_id,
                 GameUserStats.game_id == game.id,
                 GameUserStats.platform == platform,
             )
         )
         stats = stats_q.scalar_one_or_none()
         if not stats:
-            stats = GameUserStats(
-                user_id=current_user.id,
-                game_id=game.id,
-                platform=platform,
-            )
+            stats = GameUserStats(user_id=user_id, game_id=game.id, platform=platform)
             db.add(stats)
 
         for field in (
@@ -335,7 +253,8 @@ async def psn_sync(
             "last_played_at", "trophy_progress", "trophies_earned",
             "trophies_defined",
         ):
-            if field in item:
+            # A missing/None provider value must never erase a previously known statistic.
+            if item.get(field) is not None:
                 setattr(stats, field, item[field])
         imported += 1
 
@@ -343,6 +262,60 @@ async def psn_sync(
     settings.psn_last_sync_count = imported
     settings.psn_last_sync_error = None
     await db.commit()
+    return imported
+
+
+async def run_psn_sync(user_id: int, job_id: int) -> None:
+    logger.info("Starting automatic PlayStation sync for user %s, job %s", user_id, job_id)
+    async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    async with async_session() as db:
+        try:
+            await db.execute(
+                update(SyncJob)
+                .where(SyncJob.id == job_id, SyncJob.status == SyncStatus.pending)
+                .values(status=SyncStatus.running, current_step="Syncing PlayStation games")
+            )
+            await db.commit()
+            imported = await _sync_psn(db, user_id)
+            await db.execute(
+                update(SyncJob)
+                .where(SyncJob.id == job_id)
+                .values(
+                    status=SyncStatus.completed,
+                    total_items=imported,
+                    processed_items=imported,
+                    errors=0,
+                    current_step="Completed",
+                )
+            )
+            await db.commit()
+        except Exception as exc:
+            logger.warning("Automatic PSN sync failed for user %s: %s", user_id, exc)
+            settings = await _get_settings(db, user_id)
+            settings.psn_last_sync_error = f"PlayStation sync failed: {type(exc).__name__}: {exc}"
+            await db.execute(
+                update(SyncJob)
+                .where(SyncJob.id == job_id)
+                .values(status=SyncStatus.failed, errors=1, error_message=settings.psn_last_sync_error, current_step="Failed")
+            )
+            await db.commit()
+
+
+@router.post("/sync")
+async def psn_sync(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        imported = await _sync_psn(db, current_user.id)
+    except Exception as exc:
+        logger.warning("PSN sync failed for user %s: %s", current_user.id, exc)
+        settings = await _get_settings(db, current_user.id)
+        settings.psn_last_sync_error = f"PlayStation sync failed: {type(exc).__name__}: {exc}"
+        await db.commit()
+        raise HTTPException(status_code=400, detail=settings.psn_last_sync_error)
+
+    settings = await _get_settings(db, current_user.id)
     return {"status": "synced", "games_imported": imported, "synced_at": settings.psn_last_sync_at.isoformat()}
 
 
