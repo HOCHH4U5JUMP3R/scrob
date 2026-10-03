@@ -276,8 +276,7 @@ async def _auto_sync_scheduler():
 
 
                 # Games use the same SyncJob infrastructure as media players.
-                # The source remains "manual" for backwards-compatible enum storage;
-                # job_type identifies the game network (psn/xbox).
+                # Steam keeps its connection state in UserSettings.preferences.
                 game_sync_config = [
                     ("psn", "psn_auto_sync_interval", "psn_npsso"),
                     ("xbox", "xbox_auto_sync_interval", "xbox_oauth_token"),
@@ -293,19 +292,22 @@ async def _auto_sync_scheduler():
 
                 if game_runners:
                     game_settings_result = await db.execute(
-                        select(UserSettings).where(
-                            or_(
-                                UserSettings.psn_auto_sync_interval.isnot(None),
-                                UserSettings.xbox_auto_sync_interval.isnot(None),
-                            )
-                        )
+                        select(UserSettings).where(UserSettings.preferences.isnot(None))
                     )
                     for settings_row in game_settings_result.scalars().all():
+                        schedules = []
                         for job_type, interval_field, connected_field in game_sync_config:
                             interval = getattr(settings_row, interval_field)
-                            if interval is None or not getattr(settings_row, connected_field):
-                                continue
+                            if interval is not None and getattr(settings_row, connected_field):
+                                schedules.append((job_type, interval))
 
+                        steam_auth = (settings_row.preferences or {}).get("steam")
+                        if isinstance(steam_auth, dict):
+                            steam_interval = steam_auth.get("auto_sync_interval")
+                            if steam_interval is not None and steam_auth.get("steam_id"):
+                                schedules.append(("steam", float(steam_interval)))
+
+                        for job_type, interval in schedules:
                             active_q = await db.execute(
                                 select(SyncJob)
                                 .where(
