@@ -65,7 +65,7 @@ const { token } = Astro.locals;
       </p>
     </article>
 
-    <article class="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-5">
+    <article class="rounded-2xl border border-zinc-800 bg-zinc-900/70 overflow-hidden">
       <div class="flex items-start justify-between gap-4">
         <div class="flex items-center gap-3">
           <div class="w-11 h-11 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-xl">X</div>
@@ -120,7 +120,7 @@ const { token } = Astro.locals;
 
       <p id="xbox-message" class="hidden px-6 mt-3 text-xs"></p>
       <p id="xbox-sync-status" class="px-6 text-[11px] text-zinc-600 mt-3"></p>
-      <p class="text-[11px] text-zinc-600 mt-4">
+      <p class="px-6 pb-5 text-[11px] text-zinc-600 mt-4">
         No Azure or Entra setup is required. Sign in with Microsoft and Scrob stores the OAuth token for future syncs.
       </p>
     </article>
