@@ -27,6 +27,10 @@ def _oauth_config() -> tuple[str, str, str]:
     return client_id, client_secret, redirect_uri
 
 
+def is_configured() -> bool:
+    return bool(os.getenv("SCROB_XBOX_CLIENT_ID", "").strip() and os.getenv("SCROB_XBOX_REDIRECT_URI", "").strip())
+
+
 def authorization_url(state: str) -> str:
     client_id, client_secret, redirect_uri = _oauth_config()
     # client_secret is intentionally unused here; it must never be exposed to the browser.
