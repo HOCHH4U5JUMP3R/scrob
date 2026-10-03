@@ -22,6 +22,30 @@ router = APIRouter()
 _pending: dict[str, dict] = {}
 
 
+mport asyncio
+import logging
+import secrets
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from core.config import settings as app_settings
+from core.steam import authorization_url, fetch_library, get_player, verify_openid
+from db import async_sessionmaker, engine, get_db
+from dependencies import get_current_user
+from models.games import Game, GamePlatform, GameUserStats
+from models.sync import SyncJob, SyncStatus
+from models.users import User, UserSettings
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+_pending: dict[str, dict] = {}
+
+
 class SteamConnectRequest(BaseModel):
     api_key: str = Field(min_length=32, max_length=255)
 
@@ -68,11 +92,10 @@ async def status(db: AsyncSession = Depends(get_db), current_user: User = Depend
 
 
 @router.post("/authorize")
-async def authorize(payload: SteamConnectRequest, current_user: User = Depends(get_current_user)):
+async def authorize(current_user: User = Depends(get_current_user)):
     state = secrets.token_urlsafe(32)
     _pending[state] = {
         "user_id": current_user.id,
-        "api_key": payload.api_key.strip(),
         "created_at": datetime.now(timezone.utc).timestamp(),
     }
     callback = f"{app_settings.server_url.rstrip('/')}/api/proxy/steam/callback?state={state}"
@@ -89,7 +112,7 @@ async def callback(request: Request):
     params = {k: v for k, v in request.query_params.items() if k.startswith("openid.")}
     try:
         steam_id = await verify_openid(params)
-        player = await get_player(pending["api_key"], steam_id)
+        player = await get_player(steam_id)
     except Exception as exc:
         logger.warning("Steam authentication failed: %s", exc)
         return {"status": "error", "message": f"Steam authentication failed: {type(exc).__name__}: {exc}"}
@@ -98,7 +121,6 @@ async def callback(request: Request):
         settings = await _settings(db, pending["user_id"])
         auth = _auth(settings)
         auth.update({
-            "api_key": pending["api_key"],
             "steam_id": steam_id,
             "persona_name": player.get("personaname"),
             "avatar": player.get("avatarfull") or player.get("avatarmedium"),
@@ -135,10 +157,10 @@ async def disconnect(db: AsyncSession = Depends(get_db), current_user: User = De
 async def _sync_steam(db: AsyncSession, user_id: int) -> int:
     settings = await _settings(db, user_id)
     auth = _auth(settings)
-    if not auth.get("api_key") or not auth.get("steam_id"):
+    if not auth.get("steam_id"):
         raise RuntimeError("Steam is not connected.")
 
-    data = await fetch_library(auth["api_key"], auth["steam_id"])
+    data = await fetch_library(auth["steam_id"])
     imported = 0
     for item in data.get("games", []):
         appid = str(item.get("appid") or "")
