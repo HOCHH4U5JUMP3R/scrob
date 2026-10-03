@@ -1,0 +1,37 @@
+---
+import Base from "../layouts/Base.astro";
+export const prerender = false;
+const { token } = Astro.locals;
+let games: any[] = [];
+try {
+  const res = await fetch(`http://localhost:${import.meta.env.BACKEND_PORT ?? "7331"}/games`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (res.ok) games = (await res.json()).results ?? [];
+} catch {}
+---
+<Base title="Games">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 py-6 md:py-10">
+    <div class="flex items-end justify-between gap-4 flex-wrap mb-8">
+      <div><p class="text-[10px] font-black uppercase tracking-[.2em] text-sky-400">Gaming</p><h1 class="page-title mt-2">Games</h1><p class="text-sm text-zinc-500 mt-2">Your games across PlayStation, Xbox and other platforms.</p></div>
+      <div class="text-sm font-bold text-zinc-500">{games.length} {games.length === 1 ? "game" : "games"}</div>
+    </div>
+    {games.length === 0 ? (
+      <div class="rounded-2xl border border-dashed border-zinc-800 bg-zinc-900/40 p-14 text-center">
+        <div class="mx-auto mb-5 w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-600"><span class="text-3xl">🎮</span></div>
+        <h2 class="text-xl font-black text-zinc-200">No games yet</h2>
+        <p class="text-sm text-zinc-500 max-w-md mx-auto mt-2">Connect PlayStation or Xbox later and the unified game library will appear here.</p>
+      </div>
+    ) : (
+      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-5">
+        {games.map(game => (
+          <a href={`/game/${game.id}`} class="group min-w-0">
+            <div class="aspect-[2/3] rounded-xl overflow-hidden bg-zinc-900 border border-zinc-800 group-hover:border-zinc-600 transition shadow-lg">
+              {game.cover_path ? <img src={game.cover_path} alt={game.title} class="w-full h-full object-cover group-hover:scale-[1.03] transition duration-300" loading="lazy" /> : <div class="w-full h-full flex items-center justify-center p-4 text-center text-zinc-600 font-bold">{game.title}</div>}
+            </div>
+            <h2 class="mt-2 text-sm font-bold text-zinc-200 truncate group-hover:text-white">{game.title}</h2>
+            <div class="mt-1 flex flex-wrap gap-1">{game.platforms?.map((p:any) => <span class="text-[9px] uppercase font-black tracking-wider text-zinc-500">{p.platform_name || p.platform}</span>)}</div>
+          </a>
+        ))}
+      </div>
+    )}
+  </div>
+</Base>
