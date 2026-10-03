@@ -4,6 +4,7 @@ import secrets
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from urllib.parse import parse_qsl, urlparse
 from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +21,10 @@ from models.users import User, UserSettings
 logger = logging.getLogger(__name__)
 router = APIRouter()
 _pending: dict[str, dict] = {}
+
+
+class SteamCompleteRequest(BaseModel):
+    redirect_url: str
 
 
 class SteamAutoSyncRequest(BaseModel):
@@ -74,20 +79,17 @@ async def authorize(current_user: User = Depends(get_current_user)):
     return {"authorization_url": authorization_url(callback)}
 
 
-@router.get("/callback", include_in_schema=False)
-async def callback(request: Request):
-    state = request.query_params.get("state", "")
+async def _complete_login(state: str, params: dict[str, str]) -> dict:
     pending = _pending.pop(state, None)
     if not pending or datetime.now(timezone.utc).timestamp() - pending["created_at"] > 600:
-        return {"status": "error", "message": "Steam login expired. Start again in Scrob."}
+        raise HTTPException(status_code=400, detail="Steam login expired. Start again in Scrob.")
 
-    params = {k: v for k, v in request.query_params.items() if k.startswith("openid.")}
     try:
         steam_id = await verify_openid(params)
         player = await get_player(steam_id)
     except Exception as exc:
         logger.warning("Steam authentication failed: %s", exc)
-        return {"status": "error", "message": f"Steam authentication failed: {type(exc).__name__}: {exc}"}
+        raise HTTPException(status_code=400, detail=f"Steam authentication failed: {type(exc).__name__}: {exc}") from exc
 
     async with async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)() as db:
         settings = await _settings(db, pending["user_id"])
@@ -103,6 +105,32 @@ async def callback(request: Request):
         await db.commit()
 
     return {"status": "connected", "persona_name": player.get("personaname")}
+
+
+@router.get("/callback", include_in_schema=False)
+async def callback(request: Request):
+    state = request.query_params.get("state", "")
+    params = {k: v for k, v in request.query_params.items() if k.startswith("openid.")}
+    try:
+        return await _complete_login(state, params)
+    except HTTPException as exc:
+        return {"status": "error", "message": exc.detail}
+
+
+@router.post("/complete")
+async def complete(payload: SteamCompleteRequest):
+    try:
+        parsed = urlparse(payload.redirect_url.strip())
+        query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        state = query.pop("state", "")
+        params = {k: v for k, v in query.items() if k.startswith("openid.")}
+        if not state or not params:
+            raise HTTPException(status_code=400, detail="Paste the complete Steam redirect URL from the browser address bar.")
+        return await _complete_login(state, params)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid Steam redirect URL: {exc}") from exc
 
 
 @router.post("/auto-sync")
