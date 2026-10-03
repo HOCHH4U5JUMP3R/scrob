@@ -307,11 +307,11 @@ const { token } = Astro.locals;
 
       if (data.last_sync_error) {
         xboxSyncStatus.textContent = "Last sync failed: " + data.last_sync_error;
-        xboxSyncStatus.className = "text-[11px] text-red-400 mt-3";
+        xboxSyncStatus.className = "text-[10px] text-red-400 mt-0.5";
       } else if (data.last_sync_at) {
         xboxSyncStatus.textContent = "Last synced: " + new Date(data.last_sync_at).toLocaleString("de-DE") + " · " + (data.last_sync_count ?? 0) + " games";
         xboxLastSyncHeader.textContent = "Last synced: " + new Date(data.last_sync_at).toLocaleString("de-DE");
-        xboxSyncStatus.className = "text-[11px] text-zinc-600 mt-3";
+        xboxSyncStatus.className = "text-[10px] text-zinc-600 mt-0.5";
       } else {
         xboxSyncStatus.textContent = "Not synced yet.";
       }
@@ -447,11 +447,11 @@ const { token } = Astro.locals;
 
       if (data.last_sync_error) {
         syncStatus.textContent = "Last sync failed: " + data.last_sync_error;
-        syncStatus.className = "text-[11px] text-red-400 mt-3";
+        syncStatus.className = "text-[10px] text-red-400 mt-0.5";
       } else if (data.last_sync_at) {
         syncStatus.textContent = "Last synced: " + new Date(data.last_sync_at).toLocaleString("de-DE") + " · " + (data.last_sync_count ?? 0) + " games";
         psnLastSyncHeader.textContent = "Last synced: " + new Date(data.last_sync_at).toLocaleString("de-DE");
-        syncStatus.className = "text-[11px] text-zinc-600 mt-3";
+        syncStatus.className = "text-[10px] text-zinc-600 mt-0.5";
       } else {
         syncStatus.textContent = "Not synced yet.";
       }
