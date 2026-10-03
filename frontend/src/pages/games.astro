@@ -9,29 +9,147 @@ try {
 } catch {}
 ---
 <Base title="Games">
+  <div id="app-data" data-token={token} class="hidden" aria-hidden="true"></div>
   <div class="max-w-7xl mx-auto px-4 sm:px-6 py-6 md:py-10">
     <div class="flex items-end justify-between gap-4 flex-wrap mb-8">
-      <div><p class="text-[10px] font-black uppercase tracking-[.2em] text-sky-400">Gaming</p><h1 class="page-title mt-2">Games</h1><p class="text-sm text-zinc-500 mt-2">Your games across PlayStation, Xbox and other platforms.</p></div>
+      <div>
+        <p class="text-[10px] font-black uppercase tracking-[.2em] text-sky-400">Gaming</p>
+        <h1 class="page-title mt-2">Games</h1>
+        <p class="text-sm text-zinc-500 mt-2">Your games across PlayStation, Xbox and other platforms.</p>
+      </div>
       <div class="text-sm font-bold text-zinc-500">{games.length} {games.length === 1 ? "game" : "games"}</div>
     </div>
+
+    <section class="mb-10 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5 sm:p-6">
+      <div class="flex items-start justify-between gap-5 flex-wrap">
+        <div>
+          <p class="text-[10px] font-black uppercase tracking-[.18em] text-zinc-500">PlayStation Network</p>
+          <h2 id="psn-status-title" class="text-lg font-black text-zinc-100 mt-1">Connect your PlayStation account</h2>
+          <p id="psn-status-text" class="text-sm text-zinc-500 mt-1 max-w-2xl">
+            Scrob can import your played PS4/PS5 games, playtime, last-played dates and trophy progress.
+          </p>
+        </div>
+        <span id="psn-badge" class="px-3 py-1.5 rounded-full bg-zinc-800 text-zinc-500 text-xs font-bold">Not connected</span>
+      </div>
+
+      <div id="psn-connect-form" class="mt-5 flex flex-col sm:flex-row gap-3">
+        <input id="psn-npsso" type="password" autocomplete="off" placeholder="Paste your PSN NPSSO token"
+          class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-500" />
+        <button id="psn-connect-btn" type="button"
+          class="px-5 py-3 rounded-xl bg-zinc-100 text-zinc-950 font-black text-sm hover:bg-white disabled:opacity-50">Connect PlayStation</button>
+      </div>
+
+      <div id="psn-connected-actions" class="hidden mt-5 flex items-center gap-3 flex-wrap">
+        <button id="psn-sync-btn" type="button" class="px-5 py-3 rounded-xl bg-sky-500 text-white font-black text-sm hover:bg-sky-400 disabled:opacity-50">Sync games</button>
+        <button id="psn-disconnect-btn" type="button" class="px-4 py-3 rounded-xl border border-zinc-700 text-zinc-400 font-bold text-sm hover:text-white">Disconnect</button>
+      </div>
+
+      <p id="psn-message" class="hidden mt-4 text-sm"></p>
+      <p class="text-[11px] text-zinc-600 mt-5">
+        PSN authentication uses Sony's NPSSO session token. Scrob never displays it again after saving it.
+      </p>
+    </section>
+
     {games.length === 0 ? (
-      <div class="rounded-2xl border border-dashed border-zinc-800 bg-zinc-900/40 p-14 text-center">
+      <div id="games-empty" class="rounded-2xl border border-dashed border-zinc-800 bg-zinc-900/40 p-14 text-center">
         <div class="mx-auto mb-5 w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-600"><span class="text-3xl">🎮</span></div>
         <h2 class="text-xl font-black text-zinc-200">No games yet</h2>
-        <p class="text-sm text-zinc-500 max-w-md mx-auto mt-2">Connect PlayStation or Xbox later and the unified game library will appear here.</p>
+        <p class="text-sm text-zinc-500 max-w-md mx-auto mt-2">Connect PlayStation or Xbox and the unified game library will appear here.</p>
       </div>
     ) : (
-      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-5">
+      <div id="games-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-5">
         {games.map(game => (
           <a href={`/game/${game.id}`} class="group min-w-0">
             <div class="aspect-[2/3] rounded-xl overflow-hidden bg-zinc-900 border border-zinc-800 group-hover:border-zinc-600 transition shadow-lg">
               {game.cover_path ? <img src={game.cover_path} alt={game.title} class="w-full h-full object-cover group-hover:scale-[1.03] transition duration-300" loading="lazy" /> : <div class="w-full h-full flex items-center justify-center p-4 text-center text-zinc-600 font-bold">{game.title}</div>}
             </div>
             <h2 class="mt-2 text-sm font-bold text-zinc-200 truncate group-hover:text-white">{game.title}</h2>
-            <div class="mt-1 flex flex-wrap gap-1">{game.platforms?.map((p:any) => <span class="text-[9px] uppercase font-black tracking-wider text-zinc-500">{p.platform_name || p.platform}</span>)}</div>
+            <div class="mt-1 flex flex-wrap gap-1">
+              {game.platforms?.map((p:any) => <span class="text-[9px] uppercase font-black tracking-wider text-zinc-500">{p.platform_name || p.platform}</span>)}
+            </div>
+            {game.stats?.some((s:any) => s.playtime_minutes != null) && (
+              <p class="mt-1 text-[10px] text-zinc-600">
+                {Math.round(Math.max(...game.stats.filter((s:any) => s.playtime_minutes != null).map((s:any) => s.playtime_minutes)) / 60)}h played
+              </p>
+            )}
           </a>
         ))}
       </div>
     )}
   </div>
+
+  <script define:vars={{ token }}>
+    const apiBase = "";
+    const headers = () => ({ Authorization: `Bearer ${token}`, "Content-Type": "application/json" });
+    const badge = document.getElementById("psn-badge");
+    const title = document.getElementById("psn-status-title");
+    const text = document.getElementById("psn-status-text");
+    const form = document.getElementById("psn-connect-form");
+    const actions = document.getElementById("psn-connected-actions");
+    const message = document.getElementById("psn-message");
+    const setMessage = (value, error=false) => {
+      message.textContent = value;
+      message.className = `mt-4 text-sm ${error ? "text-red-400" : "text-emerald-400"}`;
+    };
+
+    async function refreshStatus() {
+      const res = await fetch("/psn/status", { headers: headers() });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.connected) {
+        badge.textContent = data.online_id ? `Connected · ${data.online_id}` : "Connected";
+        badge.className = "px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-bold";
+        title.textContent = "PlayStation Network connected";
+        text.textContent = "Your PSN library can be synchronized into Scrob.";
+        form.classList.add("hidden");
+        actions.classList.remove("hidden");
+      }
+    }
+
+    document.getElementById("psn-connect-btn")?.addEventListener("click", async () => {
+      const input = document.getElementById("psn-npsso");
+      const button = document.getElementById("psn-connect-btn");
+      const npsso = input.value.trim();
+      if (!npsso) return setMessage("Please paste your NPSSO token.", true);
+      button.disabled = true;
+      setMessage("Connecting to PlayStation Network…");
+      try {
+        const res = await fetch("/psn/connect", { method: "POST", headers: headers(), body: JSON.stringify({ npsso }) });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Connection failed");
+        setMessage(`Connected as ${data.online_id}. Found ${data.games_found} games.`);
+        input.value = "";
+        await refreshStatus();
+        await sync();
+      } catch (e) {
+        setMessage(e.message || "Connection failed", true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    async function sync() {
+      const button = document.getElementById("psn-sync-btn");
+      button.disabled = true;
+      setMessage("Syncing your PlayStation library…");
+      try {
+        const res = await fetch("/psn/sync", { method: "POST", headers: headers() });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Sync failed");
+        setMessage(`Synced ${data.games_imported} games. Reloading…`);
+        setTimeout(() => location.reload(), 500);
+      } catch (e) {
+        setMessage(e.message || "Sync failed", true);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    document.getElementById("psn-sync-btn")?.addEventListener("click", sync);
+    document.getElementById("psn-disconnect-btn")?.addEventListener("click", async () => {
+      await fetch("/psn/disconnect", { method: "DELETE", headers: headers() });
+      location.reload();
+    });
+    refreshStatus();
+  </script>
 </Base>
