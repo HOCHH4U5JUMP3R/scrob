@@ -55,8 +55,49 @@ const { token } = Astro.locals;
       </p>
     </article>
 
+    <article class="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-5">
+      <div class="flex items-start justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div class="w-11 h-11 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-xl">X</div>
+          <div>
+            <h3 class="font-bold text-zinc-100">Xbox Network</h3>
+            <p id="xbox-status" class="text-xs text-zinc-500 mt-0.5">Checking connection…</p>
+          </div>
+        </div>
+        <span id="xbox-badge" class="px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-500 text-[10px] font-black uppercase tracking-wider">Offline</span>
+      </div>
+
+      <p class="text-sm text-zinc-500 mt-4">
+        Connect your Microsoft account to import Xbox game history, playtime and achievement progress.
+      </p>
+
+      <div id="xbox-connect-form" class="mt-4">
+        <button id="xbox-connect-btn" type="button"
+          class="w-full px-4 py-3 rounded-xl bg-zinc-100 text-zinc-950 font-black text-sm hover:bg-white disabled:opacity-50">
+          Connect Xbox
+        </button>
+      </div>
+
+      <div id="xbox-connected-actions" class="hidden mt-4 flex items-center gap-2 flex-wrap">
+        <button id="xbox-sync-btn" type="button"
+          class="px-4 py-2.5 rounded-xl bg-sky-500 text-white font-black text-sm hover:bg-sky-400 disabled:opacity-50">
+          Sync games
+        </button>
+        <button id="xbox-disconnect-btn" type="button"
+          class="px-4 py-2.5 rounded-xl border border-zinc-700 text-zinc-400 font-bold text-sm hover:text-white">
+          Disconnect
+        </button>
+      </div>
+
+      <p id="xbox-message" class="hidden mt-3 text-xs"></p>
+      <p id="xbox-sync-status" class="text-[11px] text-zinc-600 mt-3"></p>
+      <p class="text-[11px] text-zinc-600 mt-4">
+        Authentication is handled by Microsoft; Scrob stores the OAuth refresh token for future syncs.
+      </p>
+    </article>
+
     {[
-      ["Xbox Network", "Xbox Live / Microsoft account integration"],
+
       ["Steam", "Steam library and playtime integration"],
       ["Nintendo", "Nintendo game network integration"],
     ].map(([name, description]) => (
@@ -92,6 +133,102 @@ const { token } = Astro.locals;
   const actions = document.getElementById("psn-connected-actions");
   const message = document.getElementById("psn-message");
   const syncStatus = document.getElementById("psn-sync-status");
+  const xboxBadge = document.getElementById("xbox-badge");
+  const xboxStatus = document.getElementById("xbox-status");
+  const xboxForm = document.getElementById("xbox-connect-form");
+  const xboxActions = document.getElementById("xbox-connected-actions");
+  const xboxMessage = document.getElementById("xbox-message");
+  const xboxSyncStatus = document.getElementById("xbox-sync-status");
+
+  const setXboxMessage = (value, error = false) => {
+    xboxMessage.textContent = value;
+    xboxMessage.className = "mt-3 text-xs " + (error ? "text-red-400" : "text-emerald-400");
+    xboxMessage.classList.remove("hidden");
+  };
+
+  const refreshXboxStatus = async () => {
+    try {
+      const res = await api("/xbox/status");
+      if (!res.ok) throw new Error(await readError(res, "Could not read Xbox connection status."));
+      const data = await res.json();
+
+      if (!data.connected) {
+        xboxBadge.textContent = data.configured ? "Ready" : "Not configured";
+        xboxBadge.className = "px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-500 text-[10px] font-black uppercase tracking-wider";
+        xboxStatus.textContent = data.configured ? "Not connected" : "Server configuration missing";
+        xboxForm.classList.remove("hidden");
+        xboxActions.classList.add("hidden");
+        return;
+      }
+
+      xboxBadge.textContent = "Connected";
+      xboxBadge.className = "px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-black uppercase tracking-wider";
+      xboxStatus.textContent = data.gamertag ? "Connected as " + data.gamertag : "Connected";
+      xboxForm.classList.add("hidden");
+      xboxActions.classList.remove("hidden");
+
+      if (data.last_sync_error) {
+        xboxSyncStatus.textContent = "Last sync failed: " + data.last_sync_error;
+        xboxSyncStatus.className = "text-[11px] text-red-400 mt-3";
+      } else if (data.last_sync_at) {
+        xboxSyncStatus.textContent = "Last synced: " + new Date(data.last_sync_at).toLocaleString("de-DE") + " · " + (data.last_sync_count ?? 0) + " games";
+        xboxSyncStatus.className = "text-[11px] text-zinc-600 mt-3";
+      } else {
+        xboxSyncStatus.textContent = "Not synced yet.";
+      }
+    } catch (error) {
+      xboxBadge.textContent = "Error";
+      xboxBadge.className = "px-2.5 py-1 rounded-full bg-red-500/10 text-red-400 text-[10px] font-black uppercase tracking-wider";
+      xboxStatus.textContent = error?.message || "Could not check connection";
+    }
+  };
+
+  document.getElementById("xbox-connect-btn")?.addEventListener("click", async () => {
+    const button = document.getElementById("xbox-connect-btn");
+    button.disabled = true;
+    setXboxMessage("Opening Microsoft sign-in…");
+
+    try {
+      const res = await api("/xbox/authorize");
+      if (!res.ok) throw new Error(await readError(res, "Xbox authentication is not configured."));
+      const data = await res.json();
+      window.location.href = data.authorization_url;
+    } catch (error) {
+      setXboxMessage(error?.message || "Xbox authentication failed.", true);
+      button.disabled = false;
+    }
+  });
+
+  document.getElementById("xbox-sync-btn")?.addEventListener("click", async () => {
+    const button = document.getElementById("xbox-sync-btn");
+    button.disabled = true;
+    setXboxMessage("Syncing your Xbox library…");
+
+    try {
+      const res = await api("/xbox/sync", { method: "POST" });
+      if (!res.ok) throw new Error(await readError(res, "Xbox sync failed."));
+      const data = await res.json();
+      setXboxMessage("Synced " + data.games_imported + " games.");
+      await refreshXboxStatus();
+      setTimeout(() => location.reload(), 500);
+    } catch (error) {
+      setXboxMessage(error?.message || "Xbox sync failed.", true);
+      await refreshXboxStatus();
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  document.getElementById("xbox-disconnect-btn")?.addEventListener("click", async () => {
+    const res = await api("/xbox/disconnect", { method: "DELETE" });
+    if (!res.ok) {
+      setXboxMessage(await readError(res, "Could not disconnect Xbox."), true);
+      return;
+    }
+    location.reload();
+  });
+
+
 
   const setMessage = (value, error = false) => {
     message.textContent = value;
@@ -201,4 +338,5 @@ const { token } = Astro.locals;
   });
 
   refreshStatus();
+  refreshXboxStatus();
 </script>

@@ -44,6 +44,7 @@ RUN uv sync --frozen --no-dev --no-cache
 
 # PSNAWP is required by the PlayStation integration.
 RUN uv pip install --python /app/backend/.venv/bin/python psnawp==3.0.3
+RUN uv pip install --python /app/backend/.venv/bin/python xbox-webapi==2.1.0
 
 COPY backend/ .
 

@@ -39,6 +39,7 @@ RUN uv sync --frozen --no-dev --no-cache
 # the same virtualenv used by the backend runtime; backend/requirements.txt is
 # not used by the production image build.
 RUN uv pip install --python /app/backend/.venv/bin/python psnawp==3.0.3
+RUN uv pip install --python /app/backend/.venv/bin/python xbox-webapi==2.1.0
 
 COPY backend/ .
 

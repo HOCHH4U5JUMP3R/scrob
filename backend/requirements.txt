@@ -26,6 +26,7 @@ typing_extensions==4.15.0
 uvicorn==0.42.0
 uvloop==0.22.1
 psnawp==3.0.3
+xbox-webapi==2.1.0
 watchfiles==1.1.1
 websockets==16.0
 alembic
