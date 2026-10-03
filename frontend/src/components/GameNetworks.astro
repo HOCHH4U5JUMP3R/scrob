@@ -83,12 +83,38 @@ const { token } = Astro.locals;
       </div>
     </details>
 
-    <details class="group rounded-2xl border border-zinc-800 bg-zinc-900/40 overflow-hidden opacity-80">
-      <summary class="flex items-center gap-3 px-6 py-4 cursor-pointer list-none">
-        <div class="w-11 h-11 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-xl">🎮</div>
-        <div class="min-w-0 flex-1"><div class="flex items-center gap-2"><h3 class="font-bold text-zinc-200">Steam</h3><span class="px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-600 text-[10px] font-black uppercase tracking-wider">Soon</span></div><p class="text-xs text-zinc-500 mt-0.5">Steam integration</p></div>
-        <span class="text-zinc-500">⌄</span>
+    <details id="steam-details" class="group rounded-2xl border border-zinc-800 bg-zinc-900/70 overflow-hidden">
+      <summary class="relative flex items-center gap-3 px-6 py-4 cursor-pointer list-none hover:bg-zinc-900 transition">
+        <div class="w-11 h-11 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center shrink-0" style="color:#66C0F4">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.605 0 11.979 0zM7.54 18.21l-1.473-.61c.262.543.714.999 1.314 1.25 1.297.539 2.793-.076 3.332-1.375.263-.63.264-1.319.005-1.949s-.75-1.121-1.377-1.383c-.624-.26-1.29-.249-1.878-.03l1.523.63c.956.4 1.409 1.5 1.009 2.455-.397.957-1.497 1.41-2.454 1.012H7.54zm11.415-9.303c0-1.662-1.353-3.015-3.015-3.015-1.665 0-3.015 1.353-3.015 3.015 0 1.665 1.35 3.015 3.015 3.015 1.663 0 3.015-1.35 3.015-3.015zm-5.273-.005c0-1.252 1.013-2.266 2.265-2.266 1.249 0 2.266 1.014 2.266 2.266 0 1.251-1.017 2.265-2.266 2.265z"/></svg>
+        </div>
+        <div class="min-w-0 flex-1 pr-8">
+          <div class="flex items-center gap-2 flex-wrap"><h3 class="font-bold text-zinc-100">Steam</h3><span id="steam-badge" class="px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-500 text-[10px] font-black uppercase tracking-wider">Offline</span></div>
+          <p id="steam-status" class="text-xs text-zinc-500 mt-0.5">Checking connection…</p>
+          <p id="steam-sync-status" class="text-[10px] text-zinc-600 mt-0.5">Last synced: —</p>
+        </div>
+        <span class="text-zinc-500 transition-transform group-open:rotate-180">⌄</span>
+        <button id="steam-disconnect-btn" type="button" class="hidden absolute right-14 top-4 px-2.5 py-1.5 rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-500 text-[11px] font-bold hover:border-zinc-600 hover:text-zinc-200 transition z-10">Disconnect</button>
       </summary>
+      <div class="border-t border-zinc-800 px-6 py-5">
+        <div id="steam-connect-form" class="space-y-3">
+          <button id="steam-connect-btn" type="button" class="w-full px-4 py-3 rounded-xl bg-zinc-100 text-zinc-950 font-black text-sm hover:bg-white disabled:opacity-50">Connect Steam</button>
+          <div id="steam-complete-form" class="hidden space-y-2">
+            <p class="text-xs text-zinc-500">After signing in, Steam redirects back to Scrob. If the redirect page is not reachable, copy the complete URL from the browser address bar and paste it here.</p>
+            <input id="steam-redirect-url" type="text" autocomplete="off" placeholder="Paste the complete Steam redirect URL" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-sky-500" />
+            <button id="steam-complete-btn" type="button" class="w-full px-4 py-3 rounded-xl bg-sky-500 text-white font-black text-sm hover:bg-sky-400 disabled:opacity-50">Complete Steam connection</button>
+          </div>
+        </div>
+        <div id="steam-connected-actions" class="hidden items-center gap-2 flex-wrap">
+          <button id="steam-sync-btn" type="button" class="px-4 py-2.5 rounded-xl bg-sky-500 text-white font-black text-sm hover:bg-sky-400 disabled:opacity-50">Sync games</button>
+          <label class="flex items-center gap-2 text-xs text-zinc-500">Auto sync
+            <select id="steam-auto-sync" class="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-300">
+              <option value="">Off</option><option value="0.25">Every 15 minutes</option><option value="0.5">Every 30 minutes</option><option value="1">Every hour</option><option value="3">Every 3 hours</option><option value="6">Every 6 hours</option><option value="12">Every 12 hours</option><option value="24">Every 24 hours</option>
+            </select>
+          </label>
+        </div>
+        <p id="steam-message" class="hidden mt-3 text-xs"></p>
+      </div>
     </details>
   </div>
 </section>
@@ -115,7 +141,6 @@ const { token } = Astro.locals;
   const message = document.getElementById("psn-message");
   const syncStatus = document.getElementById("psn-sync-status");
   const disconnectBtn = document.getElementById("psn-disconnect-btn");
-  const psnLastSyncHeader = document.getElementById("psn-last-sync-header");
   const xboxBadge = document.getElementById("xbox-badge");
   const xboxStatus = document.getElementById("xbox-status");
   const xboxForm = document.getElementById("xbox-connect-form");
@@ -123,7 +148,6 @@ const { token } = Astro.locals;
   const xboxMessage = document.getElementById("xbox-message");
   const xboxSyncStatus = document.getElementById("xbox-sync-status");
   const xboxDisconnectBtn = document.getElementById("xbox-disconnect-btn");
-  const xboxLastSyncHeader = document.getElementById("xbox-last-sync-header");
   const xboxCompleteForm = document.getElementById("xbox-complete-form");
   const xboxCode = document.getElementById("xbox-code");
   const psnAutoSync = document.getElementById("psn-auto-sync");
@@ -135,7 +159,6 @@ const { token } = Astro.locals;
   const steamMessage = document.getElementById("steam-message");
   const steamSyncStatus = document.getElementById("steam-sync-status");
   const steamDisconnectBtn = document.getElementById("steam-disconnect-btn");
-  const steamLastSyncHeader = document.getElementById("steam-last-sync-header");
   const steamAutoSync = document.getElementById("steam-auto-sync");
   const steamCompleteForm = document.getElementById("steam-complete-form");
   const steamRedirectUrl = document.getElementById("steam-redirect-url");
@@ -147,6 +170,7 @@ const { token } = Astro.locals;
   });
 
   const setAutoSync = async (network, value, select) => {
+    select.dataset.savedValue = select.value;
     try {
       const res = await api("/" + network + "/auto-sync", {
         method: "POST",
@@ -156,6 +180,10 @@ const { token } = Astro.locals;
       select.value = value || "";
     } catch (error) {
       console.error(error);
+      select.value = select.dataset.savedValue || "";
+      const messageId = network + "-message";
+      const messageEl = document.getElementById(messageId);
+      if (messageEl) { messageEl.textContent = error?.message || "Could not update auto sync."; messageEl.className = "mt-3 text-xs text-red-400"; messageEl.classList.remove("hidden"); }
     }
   };
 
@@ -171,7 +199,7 @@ const { token } = Astro.locals;
       if (!res.ok) throw new Error(await readError(res, "Could not read Steam connection status."));
       const data = await res.json();
       if (!data.connected) {
-        steamLastSyncHeader.textContent = "";
+        steamSyncStatus.textContent = "Last synced: —";
         steamBadge.textContent = "Offline";
         steamStatus.textContent = "Not connected";
         steamForm.classList.remove("hidden");
@@ -188,12 +216,11 @@ const { token } = Astro.locals;
       steamAutoSync.value = data.auto_sync_interval != null ? String(data.auto_sync_interval) : "";
       if (data.last_sync_error) {
         steamSyncStatus.textContent = "Last sync failed: " + data.last_sync_error;
-        steamSyncStatus.className = "px-6 pb-5 text-[10px] text-red-400 mt-1";
+        steamSyncStatus.className = "text-[10px] text-red-400 mt-0.5";
       } else if (data.last_sync_at) {
         steamSyncStatus.textContent = "Last synced: " + new Date(data.last_sync_at).toLocaleString("de-DE") + " · " + (data.last_sync_count ?? 0) + " games";
-        steamLastSyncHeader.textContent = "Last synced: " + new Date(data.last_sync_at).toLocaleString("de-DE");
       } else {
-        steamSyncStatus.textContent = "Not synced yet.";
+        steamSyncStatus.textContent = "Last synced: —";
       }
     } catch (error) {
       steamStatus.textContent = error?.message || "Could not check connection";
@@ -287,7 +314,7 @@ const { token } = Astro.locals;
       const data = await res.json();
 
       if (!data.connected) {
-        xboxLastSyncHeader.textContent = "";
+        xboxSyncStatus.textContent = "Last synced: —";
         xboxBadge.textContent = "Ready";
         xboxBadge.className = "px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-500 text-[10px] font-black uppercase tracking-wider";
         xboxStatus.textContent = "Not connected";
@@ -310,10 +337,10 @@ const { token } = Astro.locals;
         xboxSyncStatus.className = "text-[10px] text-red-400 mt-0.5";
       } else if (data.last_sync_at) {
         xboxSyncStatus.textContent = "Last synced: " + new Date(data.last_sync_at).toLocaleString("de-DE") + " · " + (data.last_sync_count ?? 0) + " games";
-        xboxLastSyncHeader.textContent = "Last synced: " + new Date(data.last_sync_at).toLocaleString("de-DE");
+        xboxSyncStatus.textContent = "Last synced: " + new Date(data.last_sync_at).toLocaleString("de-DE");
         xboxSyncStatus.className = "text-[10px] text-zinc-600 mt-0.5";
       } else {
-        xboxSyncStatus.textContent = "Not synced yet.";
+        xboxSyncStatus.textContent = "Last synced: —";
       }
     } catch (error) {
       xboxBadge.textContent = "Error";
@@ -427,7 +454,7 @@ const { token } = Astro.locals;
       const data = await res.json();
 
       if (!data.connected) {
-        psnLastSyncHeader.textContent = "";
+        syncStatus.textContent = "Last synced: —";
         badge.textContent = "Offline";
         badge.className = "px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-500 text-[10px] font-black uppercase tracking-wider";
         status.textContent = "Not connected";
@@ -450,10 +477,10 @@ const { token } = Astro.locals;
         syncStatus.className = "text-[10px] text-red-400 mt-0.5";
       } else if (data.last_sync_at) {
         syncStatus.textContent = "Last synced: " + new Date(data.last_sync_at).toLocaleString("de-DE") + " · " + (data.last_sync_count ?? 0) + " games";
-        psnLastSyncHeader.textContent = "Last synced: " + new Date(data.last_sync_at).toLocaleString("de-DE");
+        syncStatus.textContent = "Last synced: " + new Date(data.last_sync_at).toLocaleString("de-DE");
         syncStatus.className = "text-[10px] text-zinc-600 mt-0.5";
       } else {
-        syncStatus.textContent = "Not synced yet.";
+        syncStatus.textContent = "Last synced: —";
       }
     } catch (error) {
       badge.textContent = "Error";
@@ -560,8 +587,6 @@ const { token } = Astro.locals;
     location.reload();
   });
 
-  refreshStatus();
-  refreshXboxStatus();
   const initializeGameNetworks = () => {
     void refreshStatus();
     void refreshXboxStatus();
