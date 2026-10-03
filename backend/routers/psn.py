@@ -168,6 +168,90 @@ async def psn_disconnect(
     return {"status": "disconnected"}
 
 
+@router.post("/browser/start")
+async def psn_browser_start(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _prune_browser_logins()
+    state = secrets.token_urlsafe(32)
+    _browser_logins[state] = {"user_id": current_user.id, "created_at": time.time()}
+    return {
+        "state": state,
+        "playstation_url": "https://www.playstation.com/",
+        "expires_in": 600,
+    }
+
+
+@router.get("/browser/status")
+async def psn_browser_status(
+    state: str,
+    current_user: User = Depends(get_current_user),
+):
+    pending = _browser_logins.get(state)
+    if not pending or pending.get("user_id") != current_user.id:
+        raise HTTPException(status_code=404, detail="PlayStation login session not found or expired.")
+    status = pending.get("status", "pending")
+    if status == "completed":
+        _browser_logins.pop(state, None)
+        return {
+            "status": "completed",
+            "online_id": pending.get("online_id"),
+            "account_id": pending.get("account_id"),
+        }
+    if status == "error":
+        _browser_logins.pop(state, None)
+        raise HTTPException(status_code=400, detail=pending.get("error", "PlayStation browser login failed."))
+    return {"status": "pending"}
+
+
+@router.post("/browser/complete")
+async def psn_browser_complete(
+    payload: str = Body(..., media_type="text/plain"),
+    db: AsyncSession = Depends(get_db),
+):
+    parts = payload.strip().split("|", 2)
+    if len(parts) != 3:
+        raise HTTPException(status_code=400, detail="Invalid PlayStation browser login payload.")
+
+    state, hostname, npsso = parts
+    pending = _browser_logins.get(state)
+    if not pending or pending.get("created_at", 0) < time.time() - 600:
+        _browser_logins.pop(state, None)
+        raise HTTPException(status_code=400, detail="PlayStation login session expired.")
+
+    hostname = hostname.lower().rstrip(".")
+    if not (
+        hostname == "playstation.com"
+        or hostname.endswith(".playstation.com")
+        or hostname == "sony.com"
+        or hostname.endswith(".sony.com")
+    ):
+        raise HTTPException(status_code=400, detail="The browser handoff must run on a PlayStation or Sony page.")
+
+    try:
+        client, token_response = await asyncio.to_thread(authenticate, npsso.strip())
+        online_id = client.online_id
+        account_id = client.account_id
+        settings = await _get_settings(db, pending["user_id"])
+        settings.psn_npsso = npsso.strip()
+        _store_psn_auth(settings, token_response)
+        settings.psn_online_id = online_id
+        settings.psn_account_id = account_id
+        settings.psn_connected_at = settings.psn_connected_at or datetime.utcnow()
+        settings.psn_last_sync_error = None
+        await db.commit()
+        pending.update({
+            "status": "completed",
+            "online_id": online_id,
+            "account_id": account_id,
+        })
+        return {"status": "connected", "online_id": online_id, "account_id": account_id}
+    except Exception as exc:
+        logger.warning("PSN browser authentication failed: %s", exc)
+        pending.update({"status": "error", "error": f"PlayStation authentication failed: {type(exc).__name__}: {exc}"})
+        raise HTTPException(status_code=400, detail=pending["error"])
+
 @router.post("/sync")
 async def psn_sync(
     db: AsyncSession = Depends(get_db),
