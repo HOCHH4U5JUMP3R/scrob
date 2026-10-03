@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
-from httpx import HTTPStatusError
+from httpx import HTTPStatusError, URL
 from xbox.webapi.api.client import XboxLiveClient
 from xbox.webapi.api.provider.titlehub.models import TitleFields
 from xbox.webapi.api.provider.userstats.models import GeneralStatsField
