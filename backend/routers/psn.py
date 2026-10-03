@@ -1,14 +1,16 @@
 import asyncio
 import logging
+import secrets
+import time
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from core.psn import fetch_library
+from core.psn import authenticate, fetch_library
 from db import get_db
 from dependencies import get_current_user
 from models.games import Game, GamePlatform, GameUserStats
@@ -16,6 +18,31 @@ from models.users import User, UserSettings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+_browser_logins: dict[str, dict] = {}
+
+
+def _psn_auth_from_settings(settings: UserSettings) -> dict | None:
+    preferences = settings.preferences or {}
+    auth = preferences.get("psn_auth")
+    return auth if isinstance(auth, dict) and auth.get("refresh_token") else None
+
+
+def _store_psn_auth(settings: UserSettings, token_response: dict) -> None:
+    preferences = dict(settings.preferences or {})
+    preferences["psn_auth"] = {
+        "refresh_token": token_response.get("refresh_token"),
+        "refresh_token_expires_in": token_response.get("refresh_token_expires_in"),
+        "refresh_token_expires_at": token_response.get("refresh_token_expires_at"),
+    }
+    settings.preferences = preferences
+
+
+def _prune_browser_logins() -> None:
+    cutoff = time.time() - 600
+    for state, pending in list(_browser_logins.items()):
+        if pending.get("created_at", 0) < cutoff:
+            _browser_logins.pop(state, None)
 
 
 class PSNConnectRequest(BaseModel):
@@ -69,9 +96,12 @@ async def psn_status(
     current_user: User = Depends(get_current_user),
 ):
     settings = await _get_settings(db, current_user.id)
+    auth = _psn_auth_from_settings(settings)
+    refresh_expires_at = auth.get("refresh_token_expires_at") if auth else None
     return {
-        "connected": bool(settings.psn_npsso),
+        "connected": bool(settings.psn_npsso or auth),
         "online_id": settings.psn_online_id,
+        "refresh_token_expires_at": refresh_expires_at,
         "account_id": settings.psn_account_id,
         "connected_at": settings.psn_connected_at.isoformat() if settings.psn_connected_at else None,
         "last_sync_at": settings.psn_last_sync_at.isoformat() if settings.psn_last_sync_at else None,
@@ -92,9 +122,7 @@ async def psn_connect(
     # independently of authentication. A successful connection should therefore
     # only prove that the NPSSO can authenticate; syncing is a separate action.
     try:
-        from psnawp_api import PSNAWP
-
-        client = await asyncio.to_thread(lambda: PSNAWP(npsso).me())
+        client, token_response = await asyncio.to_thread(authenticate, npsso)
         online_id = client.online_id
         account_id = client.account_id
     except Exception as exc:
@@ -106,6 +134,7 @@ async def psn_connect(
 
     settings = await _get_settings(db, current_user.id)
     settings.psn_npsso = npsso
+    _store_psn_auth(settings, token_response)
     settings.psn_online_id = online_id
     settings.psn_account_id = account_id
     settings.psn_connected_at = settings.psn_connected_at or datetime.utcnow()
@@ -126,6 +155,9 @@ async def psn_disconnect(
 ):
     settings = await _get_settings(db, current_user.id)
     settings.psn_npsso = None
+    preferences = dict(settings.preferences or {})
+    preferences.pop("psn_auth", None)
+    settings.preferences = preferences
     settings.psn_online_id = None
     settings.psn_account_id = None
     settings.psn_connected_at = None
@@ -146,7 +178,7 @@ async def psn_sync(
         raise HTTPException(status_code=400, detail="PlayStation is not connected.")
 
     try:
-        data = await asyncio.to_thread(fetch_library, settings.psn_npsso)
+        data = await asyncio.to_thread(fetch_library, settings.psn_npsso, _psn_auth_from_settings(settings))
     except Exception as exc:
         logger.warning("PSN sync failed for user %s: %s", current_user.id, exc)
         settings.psn_last_sync_error = f"PlayStation sync failed: {type(exc).__name__}: {exc}"
@@ -155,6 +187,8 @@ async def psn_sync(
 
     settings.psn_online_id = data["online_id"]
     settings.psn_account_id = data["account_id"]
+    if data.get("token_response"):
+        _store_psn_auth(settings, data["token_response"])
     settings.psn_connected_at = settings.psn_connected_at or datetime.utcnow()
 
     imported = 0
