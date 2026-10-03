@@ -75,6 +75,17 @@ async function handle({ params, request }: Parameters<APIRoute>[0]): Promise<Res
 
   if (res.status >= 300 && res.status < 400) {
     const location = res.headers.get("Location");
+
+    // Xbox OAuth completes on the backend and redirects back to the
+    // same-origin Connections page. The callback itself is intentionally
+    // unauthenticated; its state token identifies the pending user session.
+    if (path === "xbox/callback" && location?.startsWith("/connections")) {
+      return new Response(null, {
+        status: res.status,
+        headers: { Location: location },
+      });
+    }
+
     if (location) {
       let allowed = false;
       try {
