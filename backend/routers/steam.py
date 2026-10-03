@@ -75,7 +75,7 @@ async def authorize(payload: SteamConnectRequest, current_user: User = Depends(g
         "api_key": payload.api_key.strip(),
         "created_at": datetime.now(timezone.utc).timestamp(),
     }
-    callback = f"{app_settings.server_url.rstrip('/')}/steam/callback?state={state}"
+    callback = f"{app_settings.server_url.rstrip('/')}/api/proxy/steam/callback?state={state}"
     return {"authorization_url": authorization_url(callback)}
 
 
