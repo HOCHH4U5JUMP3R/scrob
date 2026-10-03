@@ -22,10 +22,6 @@ router = APIRouter()
 _pending: dict[str, dict] = {}
 
 
-class SteamConnectRequest(BaseModel):
-    api_key: str = Field(min_length=32, max_length=255)
-
-
 class SteamAutoSyncRequest(BaseModel):
     interval: float | None = Field(default=None, ge=0.25, le=48)
 
@@ -68,11 +64,10 @@ async def status(db: AsyncSession = Depends(get_db), current_user: User = Depend
 
 
 @router.post("/authorize")
-async def authorize(payload: SteamConnectRequest, current_user: User = Depends(get_current_user)):
+async def authorize(current_user: User = Depends(get_current_user)):
     state = secrets.token_urlsafe(32)
     _pending[state] = {
         "user_id": current_user.id,
-        "api_key": payload.api_key.strip(),
         "created_at": datetime.now(timezone.utc).timestamp(),
     }
     callback = f"{app_settings.server_url.rstrip('/')}/api/proxy/steam/callback?state={state}"
@@ -89,7 +84,7 @@ async def callback(request: Request):
     params = {k: v for k, v in request.query_params.items() if k.startswith("openid.")}
     try:
         steam_id = await verify_openid(params)
-        player = await get_player(pending["api_key"], steam_id)
+        player = await get_player(steam_id)
     except Exception as exc:
         logger.warning("Steam authentication failed: %s", exc)
         return {"status": "error", "message": f"Steam authentication failed: {type(exc).__name__}: {exc}"}
@@ -98,7 +93,6 @@ async def callback(request: Request):
         settings = await _settings(db, pending["user_id"])
         auth = _auth(settings)
         auth.update({
-            "api_key": pending["api_key"],
             "steam_id": steam_id,
             "persona_name": player.get("personaname"),
             "avatar": player.get("avatarfull") or player.get("avatarmedium"),
@@ -107,6 +101,7 @@ async def callback(request: Request):
         })
         _save(settings, auth)
         await db.commit()
+
     return {"status": "connected", "persona_name": player.get("personaname")}
 
 
@@ -135,20 +130,25 @@ async def disconnect(db: AsyncSession = Depends(get_db), current_user: User = De
 async def _sync_steam(db: AsyncSession, user_id: int) -> int:
     settings = await _settings(db, user_id)
     auth = _auth(settings)
-    if not auth.get("api_key") or not auth.get("steam_id"):
+    if not auth.get("steam_id"):
         raise RuntimeError("Steam is not connected.")
 
-    data = await fetch_library(auth["api_key"], auth["steam_id"])
+    data = await fetch_library(auth["steam_id"])
     imported = 0
+
     for item in data.get("games", []):
         appid = str(item.get("appid") or "")
         title = (item.get("name") or "Unknown Game").strip()
         if not appid:
             continue
-        result = await db.execute(select(GamePlatform).options(selectinload(GamePlatform.game)).where(
-            GamePlatform.platform == "steam", GamePlatform.external_id == appid
-        ))
+
+        result = await db.execute(
+            select(GamePlatform)
+            .options(selectinload(GamePlatform.game))
+            .where(GamePlatform.platform == "steam", GamePlatform.external_id == appid)
+        )
         platform_row = result.scalar_one_or_none()
+
         if platform_row:
             game = platform_row.game
         else:
@@ -158,29 +158,39 @@ async def _sync_steam(db: AsyncSession, user_id: int) -> int:
                 game = Game(title=title)
                 db.add(game)
                 await db.flush()
+
             platform_row = GamePlatform(
-                game_id=game.id, platform="steam", external_id=appid,
+                game_id=game.id,
+                platform="steam",
+                external_id=appid,
                 platform_name="Steam",
                 external_url=f"https://store.steampowered.com/app/{appid}/",
                 metadata_json={"source": "steam"},
             )
             db.add(platform_row)
+
         if not game.cover_path:
             game.cover_path = f"https://cdn.akamai.steamstatic.com/steam/apps/{appid}/library_600x900_2x.jpg"
 
-        result = await db.execute(select(GameUserStats).where(
-            GameUserStats.user_id == user_id,
-            GameUserStats.game_id == game.id,
-            GameUserStats.platform == "steam",
-        ))
+        result = await db.execute(
+            select(GameUserStats).where(
+                GameUserStats.user_id == user_id,
+                GameUserStats.game_id == game.id,
+                GameUserStats.platform == "steam",
+            )
+        )
         stats = result.scalar_one_or_none()
         if not stats:
             stats = GameUserStats(user_id=user_id, game_id=game.id, platform="steam")
             db.add(stats)
+
         if item.get("playtime_forever") is not None:
             stats.playtime_minutes = int(item["playtime_forever"])
         if item.get("rtime_last_played"):
-            stats.last_played_at = datetime.fromtimestamp(int(item["rtime_last_played"]), tz=timezone.utc).replace(tzinfo=None)
+            stats.last_played_at = datetime.fromtimestamp(
+                int(item["rtime_last_played"]), tz=timezone.utc
+            ).replace(tzinfo=None)
+
         imported += 1
 
     auth["last_sync_at"] = datetime.utcnow().isoformat()
@@ -194,15 +204,24 @@ async def _sync_steam(db: AsyncSession, user_id: int) -> int:
 async def run_steam_sync(user_id: int, job_id: int) -> None:
     async with async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)() as db:
         try:
-            await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(
-                status=SyncStatus.running, current_step="Syncing Steam games"
-            ))
+            await db.execute(
+                update(SyncJob)
+                .where(SyncJob.id == job_id)
+                .values(status=SyncStatus.running, current_step="Syncing Steam games")
+            )
             await db.commit()
             imported = await _sync_steam(db, user_id)
-            await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(
-                status=SyncStatus.completed, total_items=imported,
-                processed_items=imported, errors=0, current_step="Completed"
-            ))
+            await db.execute(
+                update(SyncJob)
+                .where(SyncJob.id == job_id)
+                .values(
+                    status=SyncStatus.completed,
+                    total_items=imported,
+                    processed_items=imported,
+                    errors=0,
+                    current_step="Completed",
+                )
+            )
             await db.commit()
         except Exception as exc:
             await db.rollback()
@@ -210,10 +229,16 @@ async def run_steam_sync(user_id: int, job_id: int) -> None:
             auth = _auth(settings)
             auth["last_sync_error"] = f"Steam sync failed: {type(exc).__name__}: {exc}"
             _save(settings, auth)
-            await db.execute(update(SyncJob).where(SyncJob.id == job_id).values(
-                status=SyncStatus.failed, errors=1,
-                error_message=auth["last_sync_error"], current_step="Failed"
-            ))
+            await db.execute(
+                update(SyncJob)
+                .where(SyncJob.id == job_id)
+                .values(
+                    status=SyncStatus.failed,
+                    errors=1,
+                    error_message=auth["last_sync_error"],
+                    current_step="Failed",
+                )
+            )
             await db.commit()
 
 
@@ -228,5 +253,10 @@ async def sync(db: AsyncSession = Depends(get_db), current_user: User = Depends(
         _save(settings, auth)
         await db.commit()
         raise HTTPException(status_code=400, detail=auth["last_sync_error"])
+
     auth = _auth(await _settings(db, current_user.id))
-    return {"status": "synced", "games_imported": imported, "synced_at": auth.get("last_sync_at")}
+    return {
+        "status": "synced",
+        "games_imported": imported,
+        "synced_at": auth.get("last_sync_at"),
+    }

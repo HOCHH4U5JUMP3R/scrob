@@ -1,8 +1,15 @@
-import httpx
+"""Steam browser authentication and public library helpers."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
 from urllib.parse import urlencode
+from xml.etree import ElementTree
+
+import httpx
 
 STEAM_OPENID_URL = "https://steamcommunity.com/openid/login"
-STEAM_API_URL = "https://api.steampowered.com"
+STEAM_COMMUNITY_URL = "https://steamcommunity.com"
 
 
 def authorization_url(return_to: str) -> str:
@@ -20,47 +27,89 @@ def authorization_url(return_to: str) -> str:
 async def verify_openid(params: dict[str, str]) -> str:
     if params.get("openid.mode") != "id_res":
         raise ValueError("Invalid Steam OpenID response.")
+
     verification = dict(params)
     verification["openid.mode"] = "check_authentication"
     async with httpx.AsyncClient(timeout=20) as client:
         response = await client.post(STEAM_OPENID_URL, data=verification)
         response.raise_for_status()
+
     if "is_valid:true" not in response.text:
         raise ValueError("Steam OpenID verification failed.")
+
     prefix = "https://steamcommunity.com/openid/id/"
     claimed = params.get("openid.claimed_id", "")
     if not claimed.startswith(prefix):
         raise ValueError("Steam did not return a valid SteamID.")
+
     steam_id = claimed[len(prefix):].strip("/")
     if not steam_id.isdigit():
         raise ValueError("Steam returned an invalid SteamID.")
     return steam_id
 
 
-async def get_player(steam_api_key: str, steam_id: str) -> dict:
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.get(
-            f"{STEAM_API_URL}/ISteamUser/GetPlayerSummaries/v0002/",
-            params={"key": steam_api_key, "steamids": steam_id, "format": "json"},
-        )
+async def get_player(steam_id: str) -> dict:
+    """Read the public Steam profile without requiring a per-user API key."""
+    url = f"{STEAM_COMMUNITY_URL}/profiles/{steam_id}/?xml=1"
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        response = await client.get(url)
         response.raise_for_status()
-        players = response.json().get("response", {}).get("players", [])
-    if not players:
-        raise ValueError("Steam account could not be read. Check the API key and profile privacy.")
-    return players[0]
+
+    root = ElementTree.fromstring(response.text)
+    if root.findtext("steamID64") != steam_id:
+        raise ValueError("Steam profile could not be read. Make sure the profile is public.")
+
+    return {
+        "steamid64": steam_id,
+        "personaname": root.findtext("steamID"),
+        "avatarfull": root.findtext("avatarFull") or root.findtext("avatarMedium"),
+    }
 
 
-async def fetch_library(steam_api_key: str, steam_id: str) -> dict:
-    async with httpx.AsyncClient(timeout=60) as client:
-        response = await client.get(
-            f"{STEAM_API_URL}/IPlayerService/GetOwnedGames/v0001/",
-            params={
-                "key": steam_api_key,
-                "steamid": steam_id,
-                "include_appinfo": 1,
-                "include_played_free_games": 1,
-                "format": "json",
-            },
-        )
+async def fetch_library(steam_id: str) -> dict:
+    """Read the public games page.
+
+    Steam documents this XML community feed, although it is deprecated in favour
+    of the Web API. It lets Scrob use the same browser-only OpenID flow without
+    asking users to create or paste an API key.
+    """
+    url = f"{STEAM_COMMUNITY_URL}/profiles/{steam_id}/games/?tab=all&xml=1"
+    async with httpx.AsyncClient(timeout=90, follow_redirects=True) as client:
+        response = await client.get(url)
         response.raise_for_status()
-        return response.json().get("response", {})
+
+    root = ElementTree.fromstring(response.text)
+    error = root.findtext("error")
+    if error:
+        raise ValueError(error.strip())
+
+    games: list[dict] = []
+    for node in root.findall("./games/game"):
+        appid = node.findtext("appID")
+        name = node.findtext("name")
+        if not appid or not name:
+            continue
+
+        hours = node.findtext("hoursOnRecord")
+        last_played = node.findtext("lastPlayed")
+
+        item = {
+            "appid": appid,
+            "name": name.strip(),
+            "playtime_forever": int(float(hours or 0) * 60),
+            "rtime_last_played": int(last_played) if last_played and last_played.isdigit() else None,
+        }
+        games.append(item)
+
+    if not games:
+        raise ValueError(
+            "Steam returned no games. Make sure your Steam profile and game details are public."
+        )
+
+    return {"games": games}
+
+
+def utc_from_timestamp(value: int | None) -> datetime | None:
+    if not value:
+        return None
+    return datetime.fromtimestamp(value, tz=timezone.utc).replace(tzinfo=None)
