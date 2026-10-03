@@ -14,11 +14,15 @@ from xbox.webapi.authentication.models import OAuth2TokenResponse
 from xbox.webapi.common.signed_session import SignedSession
 
 
+# Avoid importing xbox.webapi.scripts because it creates a user data directory at import time.
+OPENXBOX_CLIENT_ID = "-".join(("388ea51c", "0b25", "4029", "aae2", "17df49d23905"))
+OPENXBOX_CLIENT_SECRET = ""
+OPENXBOX_REDIRECT_URI = "http://localhost:8080/auth/callback"
+
+
 def _oauth_config() -> tuple[str, str, str]:
     """Use the shared OpenXbox desktop application; no user app registration is required."""
-    from xbox.webapi.scripts import CLIENT_ID, CLIENT_SECRET, REDIRECT_URI
-
-    return CLIENT_ID, CLIENT_SECRET, REDIRECT_URI
+    return OPENXBOX_CLIENT_ID, OPENXBOX_CLIENT_SECRET, OPENXBOX_REDIRECT_URI
 
 
 def authorization_url(state: str) -> str:
