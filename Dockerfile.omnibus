@@ -42,6 +42,9 @@ WORKDIR /app/backend
 COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --no-dev --no-cache
 
+# PSNAWP is required by the PlayStation integration.
+RUN uv pip install --python /app/backend/.venv/bin/python psnawp==3.0.3
+
 COPY backend/ .
 
 # ── Frontend ──────────────────────────────────────────────────────────────────
