@@ -148,6 +148,7 @@ async def fetch_library(oauth_json: str) -> dict[str, Any]:
             "xuid": xuid,
             "gamertag": gamertag,
             "games": games,
+            "oauth_json": manager.oauth.model_dump_json(),
         }
     finally:
         await session.aclose()
