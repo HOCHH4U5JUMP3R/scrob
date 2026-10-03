@@ -57,7 +57,7 @@ async def fetch_library(oauth_json: str) -> dict[str, Any]:
     session, manager, client = await build_client(oauth_json)
     try:
         xuid = client.xuid
-        gamertag = client.xsts_token.gamertag
+        gamertag = manager.xsts_token.gamertag
 
         response = await client.titlehub.get_title_history(
             xuid,
