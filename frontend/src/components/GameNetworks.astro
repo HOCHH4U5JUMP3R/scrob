@@ -10,9 +10,9 @@ const { token } = Astro.locals;
     </p>
   </div>
 
-  <div class="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
-    <article class="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-5">
-      <div class="flex items-start justify-between gap-4">
+  <div class="space-y-3">
+    <article class="rounded-2xl border border-zinc-800 bg-zinc-900/70 overflow-hidden">
+      <div class="flex items-center justify-between gap-4 px-6 py-4">
         <div class="flex items-center gap-3">
           <div class="w-11 h-11 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-xl">◉</div>
           <div>
@@ -23,11 +23,11 @@ const { token } = Astro.locals;
         <span id="psn-badge" class="px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-500 text-[10px] font-black uppercase tracking-wider">Offline</span>
       </div>
 
-      <p class="text-sm text-zinc-500 mt-4">
+      <p class="text-sm text-zinc-500 px-6 pb-5">
         Import PS4/PS5 playtime and last-played data plus trophy progress. PS3 and Vita trophy titles are included where PSN provides them.
       </p>
 
-      <div id="psn-connect-form" class="mt-4 space-y-3">
+      <div id="psn-connect-form" class="px-6 pb-6 space-y-3">
         <button id="psn-connect-btn" type="button"
           class="w-full px-4 py-3 rounded-xl bg-zinc-100 text-zinc-950 font-black text-sm hover:bg-white disabled:opacity-50">
           Connect with PlayStation
@@ -47,7 +47,7 @@ const { token } = Astro.locals;
           <p class="text-[10px] text-zinc-600">Scrob never receives your PSN password. The bookmarklet only reads the Sony session cookie and sends it through a one-time login state.</p>
         </div>
       </div>
-      <div id="psn-connected-actions" class="hidden mt-4 flex items-center gap-2 flex-wrap">
+      <div id="psn-connected-actions" class="hidden px-6 pb-4 flex items-center gap-2 flex-wrap">
         <button id="psn-sync-btn" type="button"
           class="px-4 py-2.5 rounded-xl bg-sky-500 text-white font-black text-sm hover:bg-sky-400 disabled:opacity-50">
           Sync games
@@ -65,8 +65,8 @@ const { token } = Astro.locals;
       </div>
         
 
-      <p id="psn-message" class="hidden mt-3 text-xs"></p>
-      <p id="psn-sync-status" class="text-[11px] text-zinc-600 mt-3"></p>
+      <p id="psn-message" class="hidden px-6 mt-3 text-xs"></p>
+      <p id="psn-sync-status" class="px-6 text-[11px] text-zinc-600 mt-3"></p>
       <p class="text-[11px] text-zinc-600 mt-4">
         Scrob uses the Sony browser session to obtain and persist the PSN refresh token. Your PSN password never reaches Scrob.
       </p>
@@ -88,7 +88,7 @@ const { token } = Astro.locals;
         Connect your Microsoft account to import Xbox game history, playtime and achievement progress.
       </p>
 
-      <div id="xbox-connect-form" class="mt-4 space-y-3">
+      <div id="xbox-connect-form" class="px-6 pb-6 space-y-3">
         <button id="xbox-connect-btn" type="button"
           class="w-full px-4 py-3 rounded-xl bg-zinc-100 text-zinc-950 font-black text-sm hover:bg-white disabled:opacity-50">
           Connect Xbox
@@ -107,7 +107,7 @@ const { token } = Astro.locals;
         </div>
       </div>
 
-      <div id="xbox-connected-actions" class="hidden mt-4 flex items-center gap-2 flex-wrap">
+      <div id="xbox-connected-actions" class="hidden px-6 pb-4 flex items-center gap-2 flex-wrap">
         <button id="xbox-sync-btn" type="button"
           class="px-4 py-2.5 rounded-xl bg-sky-500 text-white font-black text-sm hover:bg-sky-400 disabled:opacity-50">
           Sync games
@@ -125,8 +125,8 @@ const { token } = Astro.locals;
       </div>
         
 
-      <p id="xbox-message" class="hidden mt-3 text-xs"></p>
-      <p id="xbox-sync-status" class="text-[11px] text-zinc-600 mt-3"></p>
+      <p id="xbox-message" class="hidden px-6 mt-3 text-xs"></p>
+      <p id="xbox-sync-status" class="px-6 text-[11px] text-zinc-600 mt-3"></p>
       <p class="text-[11px] text-zinc-600 mt-4">
         No Azure or Entra setup is required. Sign in with Microsoft and Scrob stores the OAuth token for future syncs.
       </p>
@@ -137,7 +137,7 @@ const { token } = Astro.locals;
       ["Steam", "Steam library and playtime integration"],
       ["Nintendo", "Nintendo game network integration"],
     ].map(([name, description]) => (
-      <article class="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5 opacity-80">
+      <article class="rounded-2xl border border-zinc-800 bg-zinc-900/40 overflow-hidden opacity-80">
         <div class="flex items-start justify-between gap-4">
           <div class="flex items-center gap-3">
             <div class="w-11 h-11 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-xl">🎮</div>
