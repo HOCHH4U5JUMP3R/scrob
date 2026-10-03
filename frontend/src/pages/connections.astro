@@ -3,6 +3,7 @@ import Base from "../layouts/Base.astro";
 import { api } from "../lib/api";
 import type { DeviceGrant } from "../lib/api";
 import { connectionIconHtml } from "../lib/connectionIcons";
+import GameNetworks from "../components/GameNetworks.astro";
 
 const { token } = Astro.locals;
 const [settings, me, connections, scrobbleConnections, seasonOverrides, deviceGrants] = await Promise.all([
@@ -39,6 +40,7 @@ const sonarrConfigured   = !!(settings.sonarr_url && settings.sonarr_token);
     <div id="js-message" class="hidden fixed right-4 z-[200] max-w-sm p-4 rounded-lg shadow-2xl border"></div>
 
     <div class="space-y-12">
+      <GameNetworks />
       <section>
         <form id="connections-form" class="space-y-6">
           <!-- ======== SYNC SECTION ======== -->
