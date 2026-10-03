@@ -170,6 +170,14 @@ const { token } = Astro.locals;
   const xboxCode = document.getElementById("xbox-code");
   const psnAutoSync = document.getElementById("psn-auto-sync");
   const xboxAutoSync = document.getElementById("xbox-auto-sync");
+  const steamBadge = document.getElementById("steam-badge");
+  const steamStatus = document.getElementById("steam-status");
+  const steamForm = document.getElementById("steam-connect-form");
+  const steamActions = document.getElementById("steam-connected-actions");
+  const steamMessage = document.getElementById("steam-message");
+  const steamSyncStatus = document.getElementById("steam-sync-status");
+  const steamDisconnectBtn = document.getElementById("steam-disconnect-btn");
+
 
   const setAutoSync = async (network, value, select) => {
     try {
@@ -183,6 +191,29 @@ const { token } = Astro.locals;
       console.error(error);
     }
   };
+
+  const setSteamMessage = (value, error = false) => { steamMessage.textContent = value; steamMessage.className = "mt-3 text-xs " + (error ? "text-red-400" : "text-emerald-400"); steamMessage.classList.remove("hidden"); };
+  const refreshSteamStatus = async () => {
+    try {
+      const res = await api("/steam/status");
+      if (!res.ok) throw new Error(await readError(res, "Could not read Steam connection status."));
+      const data = await res.json();
+      if (!data.connected) { steamBadge.textContent = "Offline"; steamStatus.textContent = "Not connected"; steamForm.classList.remove("hidden"); steamActions.classList.add("hidden"); steamDisconnectBtn.classList.add("hidden"); return; }
+      steamBadge.textContent = "Connected"; steamBadge.className = "px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-black uppercase tracking-wider";
+      steamStatus.textContent = data.persona_name ? "Connected as " + data.persona_name : "Connected"; steamForm.classList.add("hidden"); steamActions.classList.remove("hidden"); steamDisconnectBtn.classList.remove("hidden");
+      steamSyncStatus.textContent = data.last_sync_at ? "Last synced: " + new Date(data.last_sync_at).toLocaleString("de-DE") + " · " + (data.last_sync_count ?? 0) + " games" : "Not synced yet.";
+    } catch (error) { steamStatus.textContent = error?.message || "Could not check connection"; }
+  };
+  document.getElementById("steam-connect-btn")?.addEventListener("click", async () => {
+    const button = document.getElementById("steam-connect-btn"); const key = document.getElementById("steam-api-key").value.trim();
+    if (!key) { setSteamMessage("Enter your Steam Web API key first.", true); return; }
+    button.disabled = true; setSteamMessage("Opening Steam sign-in…");
+    try { const res = await api("/steam/authorize", { method: "POST", body: JSON.stringify({ api_key: key }) }); if (!res.ok) throw new Error(await readError(res, "Could not start Steam authentication.")); const data = await res.json(); window.open(data.authorization_url, "_blank", "noopener,noreferrer");
+      const deadline = Date.now() + 600000; while (Date.now() < deadline) { await new Promise(resolve => setTimeout(resolve, 1500)); const poll = await api("/steam/status"); if (poll.ok && (await poll.json()).connected) { await refreshSteamStatus(); setSteamMessage("Steam connected. You can now sync your games."); return; } } throw new Error("Steam login timed out.");
+    } catch (error) { setSteamMessage(error?.message || "Steam authentication failed.", true); } finally { button.disabled = false; }
+  });
+  document.getElementById("steam-sync-btn")?.addEventListener("click", async () => { const button = document.getElementById("steam-sync-btn"); button.disabled = true; setSteamMessage("Syncing your Steam library…"); try { const res = await api("/steam/sync", { method: "POST" }); if (!res.ok) throw new Error(await readError(res, "Steam sync failed.")); const data = await res.json(); setSteamMessage("Synced " + data.games_imported + " games."); await refreshSteamStatus(); setTimeout(() => location.reload(), 500); } catch (error) { setSteamMessage(error?.message || "Steam sync failed.", true); } finally { button.disabled = false; } });
+  steamDisconnectBtn?.addEventListener("click", async () => { const res = await api("/steam/disconnect", { method: "DELETE" }); if (!res.ok) { setSteamMessage(await readError(res, "Could not disconnect Steam."), true); return; } location.reload(); });
 
   const setXboxMessage = (value, error = false) => {
     xboxMessage.textContent = value;
@@ -464,4 +495,5 @@ const { token } = Astro.locals;
 
   refreshStatus();
   refreshXboxStatus();
+  refreshSteamStatus();
 </script>
