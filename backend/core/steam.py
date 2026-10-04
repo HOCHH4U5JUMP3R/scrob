@@ -15,11 +15,15 @@ STEAM_COMMUNITY_URL = "https://steamcommunity.com"
 
 def _parse_steam_xml(xml_text: str) -> ElementTree.Element:
     """Parse Steam's legacy XML while tolerating invalid text from game names."""
+    # Steam can occasionally prefix the XML with a UTF-8 BOM. ElementTree
+    # rejects a BOM when it receives an already-decoded Python string.
+    xml_text = xml_text.lstrip("\ufeff")
     xml_text = re.sub(
         r"&(?!#(?:x[0-9A-Fa-f]+|[0-9]+);|[A-Za-z][A-Za-z0-9]+;)",
         "&amp;",
         xml_text,
     )
+    # XML 1.0 does not allow these control characters.
     xml_text = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F]", "", xml_text)
     return ElementTree.fromstring(xml_text)
 
@@ -67,7 +71,7 @@ async def get_player(steam_id: str) -> dict:
         response = await client.get(url)
         response.raise_for_status()
 
-    root = ElementTree.fromstring(response.text)
+    root = _parse_steam_xml(response.text)
     if root.findtext("steamID64") != steam_id:
         raise ValueError("Steam profile could not be read. Make sure the profile is public.")
 
@@ -90,18 +94,9 @@ async def fetch_library(steam_id: str) -> dict:
         response = await client.get(url)
         response.raise_for_status()
 
-    # Steam's legacy XML feed occasionally contains game names with a raw
-    # ampersand (or other characters that are legal in text but not in XML).
-    # ElementTree is intentionally strict and otherwise turns a perfectly
-    # usable public library into a ParseError. Repair only invalid ampersands
-    # and XML control characters; valid XML entities remain untouched.
-    xml_text = re.sub(
-        r"&(?!#(?:x[0-9A-Fa-f]+|[0-9]+);|[A-Za-z][A-Za-z0-9]+;)",
-        "&amp;",
-        response.text,
-    )
-    xml_text = re.sub(r"[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]", "", xml_text)
-    root = ElementTree.fromstring(xml_text)
+    # Steam's legacy XML feed can contain a BOM, raw ampersands, or XML
+    # control characters. Keep all of the tolerant parsing in one helper.
+    root = _parse_steam_xml(response.text)
     error = root.findtext("error")
     if error:
         raise ValueError(error.strip())
