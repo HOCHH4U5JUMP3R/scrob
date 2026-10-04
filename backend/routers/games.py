@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from db import get_db
 from dependencies import get_current_user_or_api_key
-from models.games import Game
+from models.games import Game, GameUserStats
 from models.users import User
 
 router = APIRouter()
@@ -61,6 +61,31 @@ async def list_games(
     )
     return {"results": [_game(game, current_user.id) for game in result.scalars().unique().all()]}
 
+
+
+
+@router.delete("/library")
+async def delete_game_library(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user_or_api_key),
+):
+    """Remove all game statistics owned by the current user and clean up orphaned games."""
+    deleted_stats = await db.execute(
+        delete(GameUserStats).where(GameUserStats.user_id == current_user.id)
+    )
+
+    orphan_result = await db.execute(
+        select(Game).where(~Game.user_stats.any())
+    )
+    orphaned_games = orphan_result.scalars().all()
+    for game in orphaned_games:
+        await db.delete(game)
+
+    await db.commit()
+    return {
+        "deleted_stats": deleted_stats.rowcount or 0,
+        "deleted_games": len(orphaned_games),
+    }
 
 @router.get("/{game_id}")
 async def get_game(
