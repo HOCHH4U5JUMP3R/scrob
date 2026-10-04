@@ -740,7 +740,7 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
 
     const history = document.getElementById('game-history');
     if (history) {
-      history.innerHTML = (games.play_history || []).slice(0, 20).map(a => {
+      history.innerHTML = (games.play_history || []).slice(0, 15).map(a => {
         const platform = a.platform || '';
         const icon = platformIcon(platform, 14);
         return '<a href="/game/' + a.game_id + '" class="game-history-row group block">' +
