@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from core.xbox import authorization_url, exchange_code, fetch_library
+from core.game_stats import record_game_play_activity
 from db import get_db
 from dependencies import get_current_user
 from models.games import Game, GamePlatform, GameUserStats
@@ -221,6 +222,16 @@ async def _sync_xbox(db: AsyncSession, user_id: int) -> int:
         if not stats:
             stats = GameUserStats(user_id=user_id, game_id=game.id, platform=platform)
             db.add(stats)
+
+        previous_playtime = stats.playtime_minutes
+        current_playtime = item.get("playtime_minutes")
+        last_played_at = item.get("last_played_at")
+        await record_game_play_activity(
+            db, user_id=user_id, game_id=game.id, platform=platform,
+            previous_playtime_minutes=previous_playtime,
+            current_playtime_minutes=current_playtime,
+            last_played_at=last_played_at, source="xbox",
+        )
 
         for field in (
             "playtime_minutes", "last_played_at",
