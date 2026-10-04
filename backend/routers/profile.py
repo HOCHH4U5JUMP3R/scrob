@@ -1531,9 +1531,9 @@ async def get_user_stats(
     top_networks = top_people.pop("networks")
 
     # ── Games ────────────────────────────────────────────────────────────────
-    # Game integrations store a current per-platform snapshot rather than a
-    # historical play-event stream. Aggregate those snapshots here so games
-    # become a first-class part of the same profile statistics payload.
+    # Game integrations keep a current per-platform snapshot for all-time
+    # totals. Historical playtime deltas are stored separately as immutable
+    # GamePlayActivity rows and exposed below for the unified statistics view.
     game_rows = (await db.execute(
         select(
             Game.id, Game.title, Game.cover_path,
