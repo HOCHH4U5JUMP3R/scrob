@@ -29,6 +29,7 @@ from models.follows import Follow
 from models.global_settings import GlobalSettings
 from models.games import Game, GameUserStats
 from models.game_play_activity import GamePlayActivity
+from core.game_platforms import normalize_game_platform
 from core.config import settings
 import schemas
 
