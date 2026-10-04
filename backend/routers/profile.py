@@ -28,6 +28,7 @@ from models.lists import List as ListModel, ListItem
 from models.follows import Follow
 from models.global_settings import GlobalSettings
 from models.games import Game, GameUserStats
+from models.game_play_activity import GamePlayActivity
 from core.config import settings
 import schemas
 
@@ -1530,9 +1531,9 @@ async def get_user_stats(
     top_networks = top_people.pop("networks")
 
     # ── Games ────────────────────────────────────────────────────────────────
-    # Game integrations store a current per-platform snapshot rather than a
-    # historical play-event stream. Aggregate those snapshots here so games
-    # become a first-class part of the same profile statistics payload.
+    # Game integrations keep a current per-platform snapshot for all-time
+    # totals. Historical playtime deltas are stored separately as immutable
+    # GamePlayActivity rows and exposed below for the unified statistics view.
     game_rows = (await db.execute(
         select(
             Game.id, Game.title, Game.cover_path,
@@ -1619,6 +1620,34 @@ async def get_user_stats(
     ]
     game_platform_stats.sort(key=lambda x: (x["playtime_minutes"], x["games"]), reverse=True)
 
+    activity_rows = (await db.execute(
+        select(
+            GamePlayActivity.id, GamePlayActivity.game_id, Game.title,
+            Game.cover_path, GamePlayActivity.platform,
+            GamePlayActivity.played_at, GamePlayActivity.duration_minutes,
+            GamePlayActivity.observed_at,
+        )
+        .join(Game, GamePlayActivity.game_id == Game.id)
+        .where(GamePlayActivity.user_id == user_id)
+        .order_by(GamePlayActivity.played_at.desc().nulls_last(), GamePlayActivity.id.desc())
+        .limit(100)
+    )).all()
+
+    play_history = [
+        {
+            "id": row.id,
+            "game_id": row.game_id,
+            "title": row.title,
+            "cover_path": row.cover_path,
+            "platform": row.platform,
+            "played_at": row.played_at.isoformat() if row.played_at else None,
+            "duration_minutes": row.duration_minutes,
+            "observed_at": row.observed_at.isoformat() if row.observed_at else None,
+        }
+        for row in activity_rows
+    ]
+    recorded_playtime = sum(max(int(row.duration_minutes or 0), 0) for row in activity_rows)
+
     game_stats = {
         "total_games": len(game_by_id), "total_playtime_minutes": total_game_playtime,
         "total_play_count": total_game_plays, "achievements_earned": total_game_achievements,
@@ -1626,7 +1655,9 @@ async def get_user_stats(
         "completion_percent": round(total_game_achievements / total_game_achievements_defined * 100, 1) if total_game_achievements_defined else None,
         "first_played_at": game_first_played.isoformat() if game_first_played else None,
         "last_played_at": game_last_played.isoformat() if game_last_played else None,
-        "platforms": game_platform_stats, "top_games": top_games[:12], "all_time": True,
+        "platforms": game_platform_stats, "top_games": top_games[:12],
+        "play_history": play_history, "recorded_activity_count": len(play_history),
+        "recorded_playtime_minutes": recorded_playtime, "all_time": True,
     }
 
     return {
