@@ -1547,6 +1547,19 @@ async def get_user_stats(
     )).all()
 
     game_by_id: dict[int, dict] = {}
+
+    def _game_platform(value: str | None) -> str:
+        name = str(value or "").strip().lower()
+        if "playstation" in name or name.startswith(("ps4", "ps5", "ps3", "psn")):
+            return "PlayStation"
+        if "xbox" in name:
+            return "Xbox"
+        if "steam" in name or name in {"pc", "windows", "steam pc"}:
+            return "PC"
+        if "nintendo" in name or "switch" in name or "wii" in name or "3ds" in name or "2ds" in name or "gamecube" in name:
+            return "Nintendo"
+        return str(value or "Other").strip() or "Other"
+
     game_platforms: dict[str, dict] = defaultdict(lambda: {"games": set(), "playtime_minutes": 0, "play_count": 0})
     total_game_playtime = total_game_plays = 0
     total_game_achievements = total_game_achievements_defined = 0
@@ -1571,7 +1584,8 @@ async def get_user_stats(
         plays = max(int(row.play_count or 0), 0)
         game["playtime_minutes"] += minutes
         game["play_count"] += plays
-        game["platforms"].add(row.platform)
+        platform_name = _game_platform(row.platform)
+        game["platforms"].add(platform_name)
         if row.first_played_at and (game["first_played_at"] is None or row.first_played_at < game["first_played_at"]):
             game["first_played_at"] = row.first_played_at
         if row.last_played_at and (game["last_played_at"] is None or row.last_played_at > game["last_played_at"]):
@@ -1586,7 +1600,7 @@ async def get_user_stats(
         game["trophies_earned"] += earned
         game["trophies_defined"] += defined
 
-        platform = game_platforms[row.platform]
+        platform = game_platforms[platform_name]
         platform["games"].add(row.id)
         platform["playtime_minutes"] += minutes
         platform["play_count"] += plays
