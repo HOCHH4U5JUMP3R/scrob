@@ -41,16 +41,12 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
     <div class="max-w-7xl mx-auto px-4 sm:px-6 py-6 md:py-10 stats-page">
 
       <header class="stats-hero">
-        <div class="hero-orb hero-orb-a"></div>
-        <div class="hero-orb hero-orb-b"></div>
-        <div class="hero-content">
-          <div>
-            <a href={`/profile/${id}`} class="back-link">← Profile</a>
-            <div class="hero-kicker">SCROB · PERSONAL ANALYTICS</div>
-            <h1 class="page-title">Your entertainment.<br><span>By the numbers.</span></h1>
-            <p class="hero-copy">A visual history of everything you watch, play, rate and collect.</p>
+        <div class="stats-toolbar">
+          <div class="toolbar-left">
+            <a href={'/profile/' + id} class="back-link">← Profile</a>
+            <div><div class="hero-kicker">SCROB · STATISTICS</div><h1 class="page-title">Your history</h1></div>
           </div>
-          <div class="period-control glass-control">
+          <div class="period-control">
             <label for="period-select">Time range</label>
             <select id="period-select">
               <option value="all">All time</option><option value="today">Today</option><option value="yesterday">Yesterday</option>
@@ -59,13 +55,9 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
               <option value="last7">Last 7 days</option><option value="last30">Last 30 days</option><option value="last90">Last 90 days</option>
               <option value="last365">Last 365 days</option><option value="custom">Custom range…</option>
             </select>
-            <div id="custom-range" class="hidden items-center gap-2 mt-2">
-              <input id="custom-since" type="date"><span>–</span><input id="custom-until" type="date">
-              <button id="custom-apply">Apply</button>
-            </div>
+            <div id="custom-range" class="hidden items-center gap-2 mt-2"><input id="custom-since" type="date"><span>–</span><input id="custom-until" type="date"><button id="custom-apply">Apply</button></div>
           </div>
         </div>
-        <div class="hero-rule"></div>
         <div class="hero-caption"><span id="period-caption">All time</span><span class="hero-dot"></span><span>Watch · Play · Discover</span></div>
       </header>
 
@@ -74,15 +66,6 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
           {[...Array(4)].map(() => <div class="kpi-card skeleton-card animate-pulse"><div class="skeleton h-9 w-20"></div><div class="skeleton h-3 w-28 mt-3"></div></div>)}
         </section>
 
-        <section id="insights-strip" class="insights-strip"></section>
-
-        <section class="panel recap-panel">
-          <div class="panel-heading">
-            <div><p class="eyebrow">Personal recap</p><h2 id="recap-title">Your entertainment at a glance</h2><p class="panel-subcopy">A few numbers worth knowing about your history.</p></div>
-            <span class="panel-badge">Auto generated</span>
-          </div>
-          <div id="recap-grid" class="recap-grid"></div>
-        </section>
 
         <section class="feature-grid">
           <div class="panel activity-panel hero-panel">
@@ -113,7 +96,7 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
 
         <section id="game-stats" class="section-block game-section" style="display:none">
           <div class="section-title">
-            <div><p class="eyebrow game-eyebrow">Gaming</p><h2>Your gaming life</h2><p class="section-copy">Playtime, platforms, favourites and your recorded activity.</p></div>
+            <div><p class="eyebrow game-eyebrow">Gaming</p><h2>Your gaming life</h2><p class="section-copy">The games you actually spent time with.</p></div>
           </div>
           <div class="kpi-grid game-overview">
             <div class="kpi-card"><div class="kpi-icon">🎮</div><div id="game-count" class="kpi-value">0</div><div class="kpi-label">Games played</div></div>
@@ -121,11 +104,14 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
             <div class="kpi-card"><div class="kpi-icon">◷</div><div id="game-plays" class="kpi-value">0</div><div class="kpi-label">Recorded activities</div></div>
             <div class="kpi-card"><div class="kpi-icon">🏆</div><div id="game-achievements" class="kpi-value">0%</div><div class="kpi-label">Achievement completion</div></div>
           </div>
-          <div class="game-stats-grid">
-            <div class="game-platform-area"><h3 class="game-subheading">Platforms</h3><div id="game-platforms" class="platform-kpi-grid"></div></div>
-            <div class="panel poster-panel spotlight-panel"><div class="panel-heading"><div><p class="eyebrow">Leaderboard</p><h2>Most played games</h2></div><span class="panel-badge">By playtime</span></div><div id="top-games" class="poster-grid"></div></div>
+          <div class="panel game-leaderboard">
+            <div class="panel-heading"><div><p class="eyebrow">Leaderboard</p><h2>Most played games</h2><p class="panel-subcopy">Ranked by total play time. Platforms are shown directly on each game.</p></div><span class="panel-badge">By playtime</span></div>
+            <div id="top-games" class="game-leaderboard-grid"></div>
           </div>
-          <div class="panel mt-4 history-panel"><div class="panel-heading"><div><p class="eyebrow">Timeline</p><h2>Recent play activity</h2></div><span class="panel-badge">Latest recorded</span></div><div id="game-history" class="game-history"></div></div>
+          <div class="panel history-panel">
+            <div class="panel-heading"><div><p class="eyebrow">History</p><h2>Recent play activity</h2><p class="panel-subcopy">Only newly observed playtime is recorded here.</p></div><span class="panel-badge">Latest recorded</span></div>
+            <div id="game-history" class="game-history"></div>
+          </div>
         </section>
 
         <section id="top-stats" class="section-block" style="display:none">
@@ -157,33 +143,16 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
 
 
 <style>
-.stats-page{--border:rgba(63,63,70,.68);--muted:#71717a;--panel:rgba(17,17,20,.82);--panel2:rgba(25,25,29,.92);position:relative}
-.stats-page:before{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(circle at 12% 0%,rgba(14,165,233,.055),transparent 32%),radial-gradient(circle at 88% 30%,rgba(168,85,247,.045),transparent 28%);z-index:-1}
-.stats-hero{position:relative;overflow:hidden;padding:1.1rem 0 1.5rem}
-.hero-content{position:relative;display:flex;align-items:end;justify-content:space-between;gap:2rem;min-height:250px}
-.hero-orb{position:absolute;border-radius:999px;filter:blur(55px);opacity:.16;pointer-events:none}.hero-orb-a{width:220px;height:220px;background:#0ea5e9;right:25%;top:-130px}.hero-orb-b{width:180px;height:180px;background:#8b5cf6;right:0;bottom:-110px}
-.back-link{font-size:.68rem;font-weight:900;color:#71717a;text-transform:uppercase;letter-spacing:.13em}.back-link:hover{color:#d4d4d8}
-.hero-kicker{margin-top:3rem;font-size:.65rem;font-weight:950;letter-spacing:.22em;color:#38bdf8;text-transform:uppercase}
-.page-title{font-size:clamp(2.8rem,6vw,5.6rem);line-height:.9;font-weight:950;letter-spacing:-.065em;color:#f4f4f5;margin-top:.65rem}.page-title span{color:#71717a}
-.hero-copy{max-width:540px;color:#71717a;font-size:1rem;margin-top:1rem;line-height:1.55}
-.glass-control{min-width:205px;padding:1rem;border:1px solid rgba(82,82,91,.6);border-radius:1rem;background:rgba(24,24,27,.65);backdrop-filter:blur(18px)}
-.period-control label{display:block;color:#71717a;font-size:.6rem;font-weight:950;text-transform:uppercase;letter-spacing:.16em;margin-bottom:.45rem}
-.period-control select,.period-control input{background:rgba(9,9,11,.8);border:1px solid var(--border);color:#e4e4e7;border-radius:.7rem;padding:.65rem .75rem;font-size:.78rem;font-weight:800;outline:0}.period-control select{width:100%}.period-control button{background:#0284c7;color:#fff;border:0;border-radius:.65rem;padding:.55rem .75rem;font-size:.72rem;font-weight:900}
-.hero-rule{height:1px;background:linear-gradient(90deg,rgba(63,63,70,.8),rgba(63,63,70,.15),transparent);margin-top:1.5rem}.hero-caption{display:flex;gap:.55rem;align-items:center;margin-top:.65rem;color:#52525b;font-size:.62rem;font-weight:900;text-transform:uppercase;letter-spacing:.12em}.hero-dot{width:4px;height:4px;border-radius:50%;background:#38bdf8}
-#stats-content{display:grid;gap:2rem;transition:opacity .15s ease}.overview-kpis{margin-top:.15rem}
-.kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.8rem}.kpi-card{min-height:132px;padding:1.25rem;border:1px solid var(--border);border-radius:1.15rem;background:linear-gradient(145deg,rgba(30,41,59,.62),var(--panel));display:flex;flex-direction:column;justify-content:center;box-shadow:0 18px 45px rgba(0,0,0,.12);position:relative;overflow:hidden}.kpi-card:after{content:"";position:absolute;width:110px;height:110px;right:-65px;top:-65px;border-radius:50%;background:rgba(56,189,248,.06)}
-.kpi-card p:first-child{font-size:2rem!important;font-weight:950!important;letter-spacing:-.04em}.kpi-card p:last-child{color:#71717a!important;font-size:.65rem!important;font-weight:900!important;letter-spacing:.14em;text-transform:uppercase}
-.kpi-icon{font-size:1rem;margin-bottom:.55rem;opacity:.8}.kpi-value{font-size:2rem;font-weight:950;letter-spacing:-.045em;color:#f4f4f5}.kpi-label{color:#71717a;font-size:.62rem;font-weight:900;letter-spacing:.12em;text-transform:uppercase;margin-top:.2rem}.skeleton-card{box-shadow:none}
-.insights-strip{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.75rem}.insight-card{min-height:112px;padding:1rem;border:1px solid var(--border);border-radius:1rem;background:linear-gradient(145deg,rgba(39,39,42,.7),rgba(17,17,20,.78));display:flex;align-items:flex-start;gap:.75rem}.insight-icon{font-size:1.35rem;line-height:1.1}.insight-value{font-size:1.2rem;font-weight:950;letter-spacing:-.025em;color:#f4f4f5;margin-top:.18rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}.insight-detail,.recap-detail{font-size:.65rem;color:#71717a;font-weight:700;margin-top:.15rem}.recap-panel{overflow:hidden}.recap-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.75rem}.recap-card{padding:1rem;border:1px solid rgba(63,63,70,.52);background:rgba(39,39,42,.28);border-radius:.9rem;min-width:0}.recap-icon{font-size:1.2rem;margin-bottom:.65rem}.recap-title{font-size:.95rem;font-weight:900;color:#e4e4e7;margin-top:.25rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.recap-detail{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}..feature-grid{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(300px,.8fr);gap:1rem}.panel{border:1px solid var(--border);border-radius:1.15rem;background:linear-gradient(145deg,var(--panel2),var(--panel));padding:1.3rem;box-shadow:0 18px 50px rgba(0,0,0,.12);min-width:0}.panel:hover{border-color:rgba(113,113,122,.68)}.hero-panel{min-height:330px}
-.panel-heading,.section-title{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}.panel h2,.section-title h2{font-size:1.35rem;font-weight:900;letter-spacing:-.025em;color:#f4f4f5;margin-top:.2rem}.panel h3{font-size:.68rem;font-weight:900;letter-spacing:.14em;text-transform:uppercase;color:#a1a1aa;margin-bottom:1rem}.panel-subcopy,.section-copy{font-size:.78rem;color:#52525b;margin-top:.3rem}.panel-badge{font-size:.58rem;font-weight:950;text-transform:uppercase;letter-spacing:.1em;color:#71717a;border:1px solid var(--border);border-radius:999px;padding:.4rem .65rem;white-space:nowrap}
-.eyebrow{font-size:.62rem;font-weight:950;letter-spacing:.18em;text-transform:uppercase;color:#38bdf8}.section-block{padding-top:.25rem}.section-title{margin-bottom:1rem}
-.chart-lg{height:250px}.chart-md{height:170px}.chart-sm{height:135px;margin-top:1rem}.metric-stack{display:grid;gap:.55rem}.metric-stack>div:not(.skeleton){border:1px solid rgba(63,63,70,.5);background:rgba(39,39,42,.3);border-radius:.8rem}
-.taste-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.genre-columns{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
-.game-section{border-top:1px solid rgba(63,63,70,.35);padding-top:2rem}.game-eyebrow{color:#a78bfa}.game-overview{margin-bottom:1rem}.game-platform-area{min-width:0}.game-stats-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:1rem}.game-subheading{font-size:.62rem;font-weight:950;letter-spacing:.15em;text-transform:uppercase;color:#71717a;margin:0 0 .8rem}.platform-kpi-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem}.platform-kpi-card{min-height:128px;padding:1rem;text-align:center;align-items:center}.platform-icon-wrap{height:32px;display:flex;align-items:center;justify-content:center;margin-bottom:.45rem;color:#a1a1aa}.platform-logo{width:42px;height:32px}.platform-emoji{font-size:1.8rem;line-height:1}.platform-kpi-card .kpi-value{font-size:1.8rem}.platform-kpi-card .kpi-label{white-space:nowrap}.spotlight-panel{min-height:0}.poster-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.8rem}.history-panel{margin-top:0}.game-history{display:grid;gap:.45rem}.game-history-row{display:flex;align-items:center;gap:.8rem;padding:.65rem .75rem;border:1px solid rgba(63,63,70,.5);background:rgba(39,39,42,.3);border-radius:.8rem}.game-history-cover{width:34px;height:46px;flex:none;overflow:hidden;border-radius:.4rem;background:#27272a}.game-history-cover img{width:100%;height:100%;object-fit:cover}
-.top-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.collection-grid{display:grid;grid-template-columns:.8fr 1.2fr;gap:1rem}.pie-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;align-items:center}.chip-grid{display:flex;flex-wrap:wrap;gap:.45rem}
-.skeleton{background:linear-gradient(90deg,rgba(39,39,42,.5),rgba(63,63,70,.5),rgba(39,39,42,.5));border-radius:.7rem;animation:pulse 1.5s infinite}@keyframes pulse{50%{opacity:.45}}.stats-page img{background:#27272a}.stats-footer{display:flex;justify-content:space-between;padding:1.5rem 0 2rem;color:#3f3f46;font-size:.58rem;font-weight:900;letter-spacing:.15em;text-transform:uppercase}
-@media(max-width:1100px){.insights-strip,.recap-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:900px){.hero-content{align-items:stretch;flex-direction:column;min-height:0}.hero-kicker{margin-top:2.5rem}.glass-control{width:100%}.kpi-grid{grid-template-columns:repeat(2,1fr)}.feature-grid,.taste-grid,.top-grid,.collection-grid,.game-stats-grid{grid-template-columns:1fr}.poster-grid{grid-template-columns:repeat(4,1fr)}}
-@media(max-width:560px){.insights-strip,.recap-grid{grid-template-columns:1fr 1fr}.stats-page{padding-left:1rem;padding-right:1rem}.page-title{font-size:clamp(2.6rem,13vw,4rem)}.hero-copy{font-size:.9rem}.kpi-card{min-height:105px;padding:1rem}.kpi-value{font-size:1.55rem}.kpi-card p:first-child{font-size:1.55rem!important}.period-control{width:100%}.poster-grid{grid-template-columns:repeat(3,1fr)}.genre-columns{grid-template-columns:1fr}.pie-grid{gap:.4rem}.stats-footer{display:none}.platform-kpi-grid{grid-template-columns:1fr 1fr}}
+.stats-page{--border:rgba(63,63,70,.62);--panel:rgba(18,18,21,.92);--panel2:rgba(25,25,29,.96);position:relative}.stats-page:before{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(circle at 8% 0%,rgba(14,165,233,.045),transparent 30%),radial-gradient(circle at 92% 30%,rgba(168,85,247,.035),transparent 28%);z-index:-1}
+.stats-hero{padding:.25rem 0 1rem}.stats-toolbar{display:flex;align-items:center;justify-content:space-between;gap:2rem;padding:.35rem 0 1rem;border-bottom:1px solid rgba(63,63,70,.45)}.toolbar-left{display:flex;align-items:flex-start;gap:1.2rem}.back-link{font-size:.65rem;font-weight:900;color:#71717a;text-transform:uppercase;letter-spacing:.12em;padding-top:.25rem}.back-link:hover{color:#e4e4e7}.hero-kicker{font-size:.58rem;font-weight:950;letter-spacing:.2em;color:#38bdf8;text-transform:uppercase}.page-title{font-size:clamp(1.8rem,3vw,2.7rem);line-height:1;font-weight:950;letter-spacing:-.045em;color:#f4f4f5;margin-top:.3rem}
+.period-control{min-width:205px;padding:.7rem;border:1px solid rgba(82,82,91,.55);border-radius:.85rem;background:rgba(24,24,27,.7)}.period-control label{display:block;color:#71717a;font-size:.55rem;font-weight:950;text-transform:uppercase;letter-spacing:.15em;margin-bottom:.35rem}.period-control select,.period-control input{background:#0b0b0d;border:1px solid var(--border);color:#e4e4e7;border-radius:.55rem;padding:.55rem .65rem;font-size:.72rem;font-weight:800;outline:0}.period-control select{width:100%}.period-control button{background:#0284c7;color:#fff;border:0;border-radius:.55rem;padding:.5rem .7rem;font-size:.68rem;font-weight:900}.hero-caption{display:flex;gap:.5rem;align-items:center;margin-top:.55rem;color:#52525b;font-size:.58rem;font-weight:900;text-transform:uppercase;letter-spacing:.11em}.hero-dot{width:4px;height:4px;border-radius:50%;background:#38bdf8}
+#stats-content{display:grid;gap:1.35rem;transition:opacity .15s ease}.overview-kpis{margin-top:.1rem}.kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.7rem}.kpi-card{min-height:112px;padding:1rem;border:1px solid var(--border);border-radius:1rem;background:linear-gradient(145deg,rgba(30,41,59,.42),var(--panel));display:flex;flex-direction:column;justify-content:center;box-shadow:0 14px 35px rgba(0,0,0,.1);position:relative;overflow:hidden}.kpi-card:after{content:"";position:absolute;width:90px;height:90px;right:-55px;top:-55px;border-radius:50%;background:rgba(56,189,248,.05)}.kpi-card p:first-child{font-size:1.8rem!important;font-weight:950!important;letter-spacing:-.04em}.kpi-card p:last-child{color:#71717a!important;font-size:.6rem!important;font-weight:900!important;letter-spacing:.13em;text-transform:uppercase}.kpi-icon{font-size:.9rem;margin-bottom:.45rem;opacity:.75}.kpi-value{font-size:1.8rem;font-weight:950;letter-spacing:-.045em;color:#f4f4f5}.kpi-label{color:#71717a;font-size:.58rem;font-weight:900;letter-spacing:.11em;text-transform:uppercase;margin-top:.15rem}.skeleton-card{box-shadow:none}
+.panel{border:1px solid var(--border);border-radius:1rem;background:linear-gradient(145deg,var(--panel2),var(--panel));padding:1.15rem;box-shadow:0 14px 40px rgba(0,0,0,.1);min-width:0}.panel:hover{border-color:rgba(113,113,122,.6)}.panel-heading,.section-title{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}.panel h2,.section-title h2{font-size:1.2rem;font-weight:900;letter-spacing:-.025em;color:#f4f4f5;margin-top:.18rem}.panel h3{font-size:.65rem;font-weight:900;letter-spacing:.13em;text-transform:uppercase;color:#a1a1aa;margin-bottom:.9rem}.panel-subcopy,.section-copy{font-size:.72rem;color:#52525b;margin-top:.25rem}.panel-badge{font-size:.55rem;font-weight:950;text-transform:uppercase;letter-spacing:.09em;color:#71717a;border:1px solid var(--border);border-radius:999px;padding:.35rem .55rem;white-space:nowrap}.eyebrow{font-size:.58rem;font-weight:950;letter-spacing:.17em;text-transform:uppercase;color:#38bdf8}.section-block{padding-top:.05rem}.section-title{margin-bottom:.8rem}
+.feature-grid{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(300px,.8fr);gap:.8rem}.hero-panel{min-height:310px}.chart-lg{height:230px}.chart-md{height:160px}.chart-sm{height:125px;margin-top:.8rem}.metric-stack{display:grid;gap:.5rem}.metric-stack>div:not(.skeleton){border:1px solid rgba(63,63,70,.48);background:rgba(39,39,42,.24);border-radius:.7rem}.taste-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem}.genre-columns{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
+.game-section{border-top:1px solid rgba(63,63,70,.35);padding-top:1.5rem}.game-eyebrow{color:#a78bfa}.game-overview{margin-bottom:.8rem}.game-leaderboard{margin-bottom:.8rem}.game-leaderboard-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.8rem}.game-card{min-width:0;display:block}.game-cover{aspect-ratio:2/3;border-radius:.8rem;overflow:hidden;background:#27272a;border:1px solid rgba(63,63,70,.6);position:relative}.game-cover img{width:100%;height:100%;display:block;object-fit:cover;transition:transform .2s ease}.game-card:hover .game-cover img{transform:scale(1.025)}.game-rank{position:absolute;left:.45rem;top:.45rem;width:1.55rem;height:1.55rem;border-radius:.45rem;background:rgba(9,9,11,.82);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:950;color:#f4f4f5}.game-meta{padding:.55rem .1rem 0}.game-title{font-size:.72rem;font-weight:850;color:#e4e4e7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.game-time{font-size:.62rem;color:#71717a;margin-top:.18rem}.game-platforms{display:flex;flex-wrap:wrap;gap:.28rem;margin-top:.4rem}.game-platform{display:inline-flex;align-items:center;gap:.28rem;padding:.2rem .35rem;border:1px solid rgba(63,63,70,.6);border-radius:.4rem;background:rgba(9,9,11,.55);color:#a1a1aa;font-size:.53rem;font-weight:850}.game-platform img{width:12px;height:12px;object-fit:contain;filter:brightness(1.15)}
+.history-panel{margin-top:0}.game-history{display:grid;gap:.4rem}.game-history-row{display:grid;grid-template-columns:48px minmax(0,1fr) auto;align-items:center;gap:.75rem;padding:.55rem .65rem;border:1px solid rgba(63,63,70,.45);background:rgba(39,39,42,.22);border-radius:.7rem;min-width:0}.game-history-cover{width:48px;height:64px;flex:none;overflow:hidden;border-radius:.42rem;background:#27272a}.game-history-cover img{display:block;width:48px!important;height:64px!important;max-width:48px!important;max-height:64px!important;object-fit:cover!important}.game-history-title{font-size:.75rem;font-weight:850;color:#e4e4e7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.game-history-meta{font-size:.6rem;color:#71717a;margin-top:.2rem}.game-history-duration{font-size:.72rem;font-weight:900;color:#d4d4d8;white-space:nowrap}
+.top-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem}.collection-grid{display:grid;grid-template-columns:.8fr 1.2fr;gap:.8rem}.pie-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem;align-items:center}.chip-grid{display:flex;flex-wrap:wrap;gap:.4rem}.poster-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.7rem}.skeleton{background:linear-gradient(90deg,rgba(39,39,42,.5),rgba(63,63,70,.5),rgba(39,39,42,.5));border-radius:.7rem;animation:pulse 1.5s infinite}@keyframes pulse{50%{opacity:.45}}.stats-page img{background:#27272a}.stats-footer{display:flex;justify-content:space-between;padding:1rem 0 1.5rem;color:#3f3f46;font-size:.55rem;font-weight:900;letter-spacing:.14em;text-transform:uppercase}
+@media(max-width:1100px){.game-leaderboard-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}@media(max-width:900px){.stats-toolbar{align-items:stretch;flex-direction:column}.period-control{width:100%}.kpi-grid{grid-template-columns:repeat(2,1fr)}.feature-grid,.taste-grid,.top-grid,.collection-grid{grid-template-columns:1fr}.game-leaderboard-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.poster-grid{grid-template-columns:repeat(4,1fr)}}@media(max-width:560px){.stats-page{padding-left:1rem;padding-right:1rem}.toolbar-left{gap:.7rem}.page-title{font-size:1.8rem}.kpi-card{min-height:96px;padding:.85rem}.kpi-value{font-size:1.5rem}.kpi-card p:first-child{font-size:1.5rem!important}.game-leaderboard-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.poster-grid{grid-template-columns:repeat(3,1fr)}.genre-columns{grid-template-columns:1fr}.pie-grid{gap:.35rem}.stats-footer{display:none}.game-history-row{grid-template-columns:42px minmax(0,1fr) auto;gap:.6rem}.game-history-cover{width:42px;height:56px}.game-history-cover img{width:42px!important;height:56px!important;max-width:42px!important;max-height:56px!important}.game-history-duration{font-size:.65rem}}
 </style>
 <script define:vars={{ userId: id, token, isOwnStats }}>
   // ── State ──────────────────────────────────────────────────────────────────
@@ -301,62 +270,7 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
       `).join('');
     }
 
-    // Personal insights and recap
-    const isDaily = data.granularity === 'day';
-    const insights = document.getElementById('insights-strip');
-    const recapGrid = document.getElementById('recap-grid');
-    const recapTitle = document.getElementById('recap-title');
-    const fmtShort = mins => {
-      const n = Number(mins || 0);
-      if (n < 60) return `${Math.round(n)}m`;
-      const h = Math.floor(n / 60), m = Math.round(n % 60);
-      return m ? `${h}h ${m}m` : `${h}h`;
-    };
-    const safe = n => Number.isFinite(Number(n)) ? Number(n) : 0;
-    const top = arr => (arr || []).filter(Boolean)[0];
-    const activity = (data.watch_activity || []).filter(d => safe(d.movies) + safe(d.episodes) > 0);
-    const peak = activity.reduce((best, d) =>
-      !best || safe(d.movies) + safe(d.episodes) > safe(best.movies) + safe(best.episodes) ? d : best, null);
-    const ratingValues = (data.rating_distribution || []).reduce((sum, d) => sum + safe(d.rating) * safe(d.count), 0);
-    const ratingCount = (data.rating_distribution || []).reduce((sum, d) => sum + safe(d.count), 0);
-    const weightedRating = ratingCount ? ratingValues / ratingCount : null;
-    const peakDay = (data.weekday_activity || []).filter(d => safe(d.avg) > 0)
-      .reduce((best, d) => !best || safe(d.avg) > safe(best.avg) ? d : best, null);
-    const topMovie = top(data.top_movies);
-    const topShow = top(data.top_shows);
-    const topGame = top(data.games?.top_games);
-    const gameHours = safe(data.games?.total_playtime_minutes) / 60;
-
-    if (insights) {
-      const items = [];
-      if (peak) {
-        const parts = String(peak.month).split('-');
-        const label = isDaily ? `${monthNames[Number(parts[1])-1]} ${parts[2]}` : `${monthNames[Number(parts[1])-1]} ${parts[0]}`;
-        items.push({icon:'🔥', eyebrow:'Peak period', value:label, detail:`${safe(peak.movies)+safe(peak.episodes)} watches`});
-      }
-      if (peakDay) items.push({icon:'📅', eyebrow:'Favourite day', value:peakDay.day, detail:`Most active on average`});
-      if (weightedRating != null) items.push({icon:'⭐', eyebrow:'Average rating', value:weightedRating.toFixed(1), detail:`${ratingCount.toLocaleString()} ratings`});
-      if (data.total_watch_minutes > 0) items.push({icon:'⏱️', eyebrow:'Time invested', value:formatMinutes(data.total_watch_minutes), detail:'watch time'});
-      if (gameHours > 0) items.push({icon:'🎮', eyebrow:'Gaming time', value:formatMinutes(data.games.total_playtime_minutes), detail:`${safe(data.games.total_games).toLocaleString()} games`});
-      insights.innerHTML = items.slice(0,5).map(x => `
-        <div class="insight-card"><div class="insight-icon">${x.icon}</div><div><div class="eyebrow">${x.eyebrow}</div><div class="insight-value">${x.value}</div><div class="insight-detail">${x.detail}</div></div></div>
-      `).join('');
-    }
-
-    if (recapGrid) {
-      const records = [];
-      if (topMovie) records.push({label:'Most watched movie', title:topMovie.title, detail:`${topMovie.plays || 0} plays · ${fmtShort(topMovie.minutes)}`, icon:'🎬'});
-      if (topShow) records.push({label:'Most watched show', title:topShow.title, detail:`${topShow.plays || 0} plays · ${fmtShort(topShow.minutes)}`, icon:'📺'});
-      if (topGame) records.push({label:'Most played game', title:topGame.title, detail:`${topGame.playtime_minutes || topGame.minutes || 0} min`, icon:'🎮'});
-      if (data.movies_collected) records.push({label:'Movie collection', title:`${((data.movies_watched_collected || 0) / data.movies_collected * 100).toFixed(0)}% explored`, detail:`${data.movies_watched_collected || 0} of ${data.movies_collected} watched`, icon:'🍿'});
-      if (data.shows_collected) records.push({label:'TV collection', title:`${((data.shows_watched_collected || 0) / data.shows_collected * 100).toFixed(0)}% explored`, detail:`${data.shows_watched_collected || 0} of ${data.shows_collected} watched`, icon:'📡'});
-      recapGrid.innerHTML = records.map(x => `
-        <div class="recap-card"><div class="recap-icon">${x.icon}</div><div class="eyebrow">${x.label}</div><div class="recap-title" title="${String(x.title).replace(/"/g,'&quot;')}">${x.title}</div><div class="recap-detail">${x.detail}</div></div>
-      `).join('');
-      if (recapTitle && currentPeriod !== 'all') recapTitle.textContent = `Your ${computeRange(currentPeriod).label.toLowerCase()} at a glance`;
-    }
-
-    // Activity chart
+      // Activity chart
     const activityChart = document.getElementById('activity-chart');
     if (activityChart) {
       let activityData = since && until
@@ -789,37 +703,33 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
     if (!section || !games || !games.total_games) return;
     section.style.display = '';
     const set = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+    const fmtDateTime = (value) => value ? new Date(value + (String(value).endsWith('Z') ? '' : 'Z')).toLocaleString('de-DE', { dateStyle:'medium', timeStyle:'short' }) : '—';
+    const platformIcon = (platform) => {
+      const slug = { PlayStation:'playstation', Xbox:'xbox', Nintendo:'nintendo', PC:'windows', Other:'gamepad' }[platform] || 'gamepad';
+      return 'https://cdn.simpleicons.org/' + slug + '/ffffff';
+    };
     set('game-count', Number(games.total_games).toLocaleString());
     set('game-time', fmtGameTime(games.total_playtime_minutes));
     set('game-plays', Number(games.recorded_activity_count || 0).toLocaleString());
     set('game-achievements', games.completion_percent == null ? '—' : games.completion_percent + '%');
-    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
-    const platformIcon = (platform) => {
-      if (platform === 'PlayStation') return '<svg viewBox="0 0 64 48" aria-label="PlayStation" class="platform-logo"><path fill="currentColor" d="M25 4v30.2c0 4.2 2.1 6.4 6.1 7.4V14.2c0-3.7 1.6-5.7 4.3-5.7 3.5 0 5.6 2.4 5.6 6.7v9.2l7.1-2.5v-9.1c0-8-4.6-12.8-12.5-12.8C30.4 0 27 1.5 25 4Z"/><path fill="currentColor" d="M47.4 25.1c-1.7 0-3.1.3-4.8.9l-5.8 2.1 5.1 1.7 4.6-1.6c1.8-.6 3.3-.8 4.6-.2 1.1.5 1.8 1.4 1.8 2.5 0 1.7-1.2 2.8-3.6 3.6l-8.9 3v4.2l10.2-3.4c5.4-1.8 8-4.7 8-8.6 0-2.8-1.4-5-4-6.2-2-.9-4.4-1-7.2 0ZM8.5 25.8c-3.4 1.1-5.4 3.1-5.4 5.7 0 2.7 2 4.5 5.9 5.5 3.1.8 6.9.9 10.8.5v-4.2c-2.9.2-5.4.1-7.4-.4-1.6-.4-2.4-1-2.4-1.8 0-.7.7-1.3 2.1-1.8l5.2-1.8-5-1.7-3.8 1.3Z"/></svg>';
-      if (platform === 'Xbox') return '<svg viewBox="0 0 64 64" aria-label="Xbox" class="platform-logo"><path fill="currentColor" d="M32 4C16.5 4 4 16.5 4 32s12.5 28 28 28 28-12.5 28-28S47.5 4 32 4Zm16.7 39.7C44 51.1 38 55 32 55s-12-3.9-16.7-11.3c-2.7-4.2-4.3-9.3-4.3-14.5 0-2.1.3-4.1.8-6 6.7 1.2 15.8 10.7 20.2 18.2 4.4-7.5 13.5-17 20.2-18.2.5 1.9.8 3.9.8 6 0 5.2-1.6 10.3-4.3 14.5ZM32 8.9c-4.1 0-8 1.1-11.3 3.1 3.4-.7 7.8 1.5 11.3 5.2 3.5-3.7 7.9-5.9 11.3-5.2A22.9 22.9 0 0 0 32 8.9Z"/></svg>';
-      if (platform === 'PC') return '<span class="platform-emoji" aria-label="PC">🖥️</span>';
-      if (platform === 'Nintendo') return '<span class="platform-emoji" aria-label="Nintendo">🎮</span>';
-      return '<span class="platform-emoji" aria-label="Other">🎮</span>';
-    };
-    const platforms = document.getElementById('game-platforms');
-    if (platforms) platforms.innerHTML = (games.platforms || []).map(p =>
-      '<div class="kpi-card platform-kpi-card"><div class="platform-icon-wrap">' + platformIcon(p.platform) + '</div><div class="kpi-value">' + Number(p.games).toLocaleString() + '</div><div class="kpi-label">' + esc(p.platform) + ' · ' + fmtGameTime(p.playtime_minutes) + '</div></div>'
-    ).join('');
-    const history = document.getElementById('game-history');
-    if (history) history.innerHTML = (games.play_history || []).slice(0, 20).map(a =>
-      '<div class="game-history-row"><div class="game-history-cover">' +
-      (a.cover_path ? '<img src="' + esc(a.cover_path) + '" alt="' + esc(a.title) + '" loading="lazy">' : '') +
-      '</div><div class="min-w-0 flex-1"><div class="text-sm font-bold text-zinc-200 truncate">' + esc(a.title) + '</div><div class="text-[11px] text-zinc-500">' +
-      esc(a.platform) + (a.played_at ? ' · ' + new Date(a.played_at + 'Z').toLocaleString() : '') +
-      '</div></div><div class="text-sm font-bold text-zinc-300">' + fmtGameTime(a.duration_minutes) + '</div></div>'
-    ).join('') || '<div class="text-sm text-zinc-500">Noch keine neue Spielaktivität seit Aktivierung der Historie.</div>';
 
     const cards = document.getElementById('top-games');
-    if (cards) cards.innerHTML = (games.top_games || []).map(g =>
-      '<a href="/game/' + g.id + '" class="group block min-w-0"><div class="aspect-[2/3] rounded-xl overflow-hidden bg-zinc-800 border border-zinc-800 group-hover:border-zinc-600 transition">' +
-      (g.cover_path ? '<img src="' + esc(g.cover_path) + '" alt="' + esc(g.title) + '" loading="lazy" class="w-full h-full object-cover group-hover:scale-105 transition-transform">' : '<div class="w-full h-full flex items-center justify-center p-3 text-xs text-center text-zinc-500">' + esc(g.title) + '</div>') +
-      '</div><div class="text-xs text-zinc-300 font-semibold mt-1.5 truncate">' + esc(g.title) + '</div><div class="text-[11px] text-zinc-500">' + fmtGameTime(g.playtime_minutes) + ' · ' + Number(g.play_count || 0).toLocaleString() + ' plays' + (g.completion_percent != null ? ' · ' + g.completion_percent + '%' : '') + '</div></a>'
-    ).join('');
+    if (cards) cards.innerHTML = (games.top_games || []).map((g, index) => {
+      const platforms = (g.platforms || []).map(platform => '<span class="game-platform"><img src="' + platformIcon(platform) + '" alt="" loading="lazy">' + esc(platform) + '</span>').join('');
+      return '<a href="/game/' + g.id + '" class="game-card"><div class="game-cover"><span class="game-rank">' + (index + 1) + '</span>' +
+        (g.cover_path ? '<img src="' + esc(g.cover_path) + '" alt="' + esc(g.title) + '" loading="lazy">' : '<div class="w-full h-full flex items-center justify-center p-3 text-xs text-center text-zinc-500">' + esc(g.title) + '</div>') +
+        '</div><div class="game-meta"><div class="game-title" title="' + esc(g.title) + '">' + esc(g.title) + '</div><div class="game-time">' + fmtGameTime(g.playtime_minutes) + ' · ' + Number(g.play_count || 0).toLocaleString() + ' plays</div><div class="game-platforms">' + platforms + '</div></div></a>';
+    }).join('');
+
+    const history = document.getElementById('game-history');
+    if (history) {
+      history.innerHTML = (games.play_history || []).slice(0, 20).map(a =>
+        '<a href="/game/' + a.game_id + '" class="game-history-row"><div class="game-history-cover">' +
+        (a.cover_path ? '<img src="' + esc(a.cover_path) + '" alt="" loading="lazy">' : '') +
+        '</div><div class="min-w-0"><div class="game-history-title">' + esc(a.title) + '</div><div class="game-history-meta">' + esc(a.platform) + (a.played_at ? ' · ' + fmtDateTime(a.played_at) : '') + '</div></div><div class="game-history-duration">' + fmtGameTime(a.duration_minutes) + '</div></a>'
+      ).join('') || '<div class="text-sm text-zinc-500 py-2">Noch keine neue Spielaktivität seit Aktivierung der Historie.</div>';
+    }
   }
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
