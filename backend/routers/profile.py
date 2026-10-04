@@ -1653,7 +1653,7 @@ async def get_user_stats(
             "game_id": row.game_id,
             "title": row.title,
             "cover_path": row.cover_path,
-            "platform": row.platform,
+            "platform": _game_platform(row.platform),
             "played_at": row.played_at.isoformat() if row.played_at else None,
             "duration_minutes": row.duration_minutes,
             "observed_at": row.observed_at.isoformat() if row.observed_at else None,
