@@ -171,6 +171,35 @@ const latestPlayed = stats
           </section>
         )}
 
+        {game.play_history?.length > 0 && (
+          <section class="mt-10">
+            <div class="flex items-end justify-between gap-4 mb-4">
+              <div>
+                <p class="text-[10px] font-black uppercase tracking-[.2em] text-violet-400">History</p>
+                <h2 class="text-2xl font-black text-white mt-1">Recent play activity</h2>
+              </div>
+              <span class="text-xs text-zinc-500">{game.play_history.length} recorded entr{game.play_history.length === 1 ? "y" : "ies"}</span>
+            </div>
+            <div class="grid gap-2">
+              {game.play_history.map((activity: any) => (
+                <div class="flex items-center gap-4 rounded-2xl border border-zinc-800 bg-zinc-900/65 px-4 py-3">
+                  <div class="w-11 h-14 shrink-0 rounded-lg bg-zinc-800 overflow-hidden flex items-center justify-center">
+                    {game.cover_path ? <img src={game.cover_path} alt="" class="w-full h-full object-cover" /> : <span class="text-zinc-600 text-xs">Game</span>}
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <p class="text-sm font-black text-zinc-200 truncate">{activity.platform}</p>
+                    <p class="text-xs text-zinc-500 mt-1">
+                      {activity.played_at ? formatDate(activity.played_at) : "Unknown date"}
+                      {activity.observed_at ? {' · recorded ' + formatDate(activity.observed_at)} : ""}
+                    </p>
+                  </div>
+                  <div class="text-sm font-black text-zinc-200 whitespace-nowrap">{formatMinutes(activity.duration_minutes)}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         {stats.length === 0 && (
           <div class="mt-10 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6">
             <p class="text-sm text-zinc-400">No PlayStation or Xbox activity has been synced for this game yet.</p>
