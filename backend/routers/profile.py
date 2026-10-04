@@ -1622,18 +1622,27 @@ async def get_user_stats(
     ]
     game_platform_stats.sort(key=lambda x: (x["playtime_minutes"], x["games"]), reverse=True)
 
-    activity_rows = (await db.execute(
-        select(
-            GamePlayActivity.id, GamePlayActivity.game_id, Game.title,
-            Game.cover_path, GamePlayActivity.platform,
-            GamePlayActivity.played_at, GamePlayActivity.duration_minutes,
-            GamePlayActivity.observed_at,
-        )
-        .join(Game, GamePlayActivity.game_id == Game.id)
-        .where(GamePlayActivity.user_id == user_id)
-        .order_by(GamePlayActivity.played_at.desc().nulls_last(), GamePlayActivity.id.desc())
-        .limit(100)
-    )).all()
+    # Game history is optional for the statistics response. A deployment can briefly
+    # have the application code ahead of the database migration; that must not
+    # take the entire statistics endpoint down. If the table is unavailable,
+    # keep the all-time game snapshot and return an empty history until migrations
+    # have caught up.
+    try:
+        activity_rows = (await db.execute(
+            select(
+                GamePlayActivity.id, GamePlayActivity.game_id, Game.title,
+                Game.cover_path, GamePlayActivity.platform,
+                GamePlayActivity.played_at, GamePlayActivity.duration_minutes,
+                GamePlayActivity.observed_at,
+            )
+            .join(Game, GamePlayActivity.game_id == Game.id)
+            .where(GamePlayActivity.user_id == user_id)
+            .order_by(GamePlayActivity.played_at.desc().nulls_last(), GamePlayActivity.id.desc())
+            .limit(100)
+        )).all()
+    except Exception:
+        await db.rollback()
+        activity_rows = []
 
     play_history = [
         {
