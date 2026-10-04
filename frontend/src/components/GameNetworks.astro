@@ -259,7 +259,7 @@ const { token } = Astro.locals;
         steamSyncStatus.textContent = "Last sync failed: " + data.last_sync_error;
         steamSyncStatus.className = "text-[10px] text-red-400 mt-0.5";
       } else if (data.last_sync_at) {
-        steamSyncStatus.textContent = "Last synced: " + new Date(data.last_sync_at).toLocaleString("de-DE") + " · " + (data.last_sync_count ?? 0) + " games";
+        steamSyncStatus.textContent = "Last synced: " + parseUtcTimestamp(data.last_sync_at).toLocaleString("de-DE") + " · " + (data.last_sync_count ?? 0) + " games";
       } else {
         steamSyncStatus.textContent = "Last synced: —";
       }
@@ -377,7 +377,7 @@ const { token } = Astro.locals;
         xboxSyncStatus.textContent = "Last sync failed: " + data.last_sync_error;
         xboxSyncStatus.className = "text-[10px] text-red-400 mt-0.5";
       } else if (data.last_sync_at) {
-        xboxSyncStatus.textContent = "Last synced: " + new Date(data.last_sync_at).toLocaleString("de-DE") + " · " + (data.last_sync_count ?? 0) + " games";
+        xboxSyncStatus.textContent = "Last synced: " + parseUtcTimestamp(data.last_sync_at).toLocaleString("de-DE") + " · " + (data.last_sync_count ?? 0) + " games";
         xboxSyncStatus.className = "text-[10px] text-zinc-600 mt-0.5";
       } else {
         xboxSyncStatus.textContent = "Last synced: —";
@@ -516,7 +516,7 @@ const { token } = Astro.locals;
         syncStatus.textContent = "Last sync failed: " + data.last_sync_error;
         syncStatus.className = "text-[10px] text-red-400 mt-0.5";
       } else if (data.last_sync_at) {
-        syncStatus.textContent = "Last synced: " + new Date(data.last_sync_at).toLocaleString("de-DE") + " · " + (data.last_sync_count ?? 0) + " games";
+        syncStatus.textContent = "Last synced: " + parseUtcTimestamp(data.last_sync_at).toLocaleString("de-DE") + " · " + (data.last_sync_count ?? 0) + " games";
         syncStatus.className = "text-[10px] text-zinc-600 mt-0.5";
       } else {
         syncStatus.textContent = "Last synced: —";
