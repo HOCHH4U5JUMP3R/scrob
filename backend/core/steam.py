@@ -32,7 +32,38 @@ def _parse_steam_xml(xml_text: str) -> ElementTree.Element:
         "&lt;",
         xml_text,
     )
-    return ElementTree.fromstring(xml_text)
+    try:
+        return ElementTree.fromstring(xml_text)
+    except ElementTree.ParseError:
+        from html.parser import HTMLParser
+
+        class _SteamParser(HTMLParser):
+            def __init__(self) -> None:
+                super().__init__(convert_charrefs=True)
+                self.root = ElementTree.Element("root")
+                self.stack = [self.root]
+
+            def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+                node = ElementTree.SubElement(self.stack[-1], tag)
+                self.stack.append(node)
+
+            def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+                ElementTree.SubElement(self.stack[-1], tag)
+
+            def handle_endtag(self, tag: str) -> None:
+                for index in range(len(self.stack) - 1, 0, -1):
+                    if self.stack[index].tag == tag:
+                        del self.stack[index:]
+                        return
+
+            def handle_data(self, data: str) -> None:
+                if data.strip():
+                    current = self.stack[-1]
+                    current.text = (current.text or "") + data
+
+        parser = _SteamParser()
+        parser.feed(xml_text)
+        return parser.root
 
 
 def authorization_url(return_to: str) -> str:
