@@ -96,13 +96,14 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
           <div class="kpi-grid mb-6">
             <div class="kpi-card"><div id="game-count" class="kpi-value">0</div><div class="kpi-label">Games played</div></div>
             <div class="kpi-card"><div id="game-time" class="kpi-value">0h</div><div class="kpi-label">Play time</div></div>
-            <div class="kpi-card"><div id="game-plays" class="kpi-value">0</div><div class="kpi-label">Play sessions</div></div>
+            <div class="kpi-card"><div id="game-plays" class="kpi-value">0</div><div class="kpi-label">Recorded activities</div></div>
             <div class="kpi-card"><div id="game-achievements" class="kpi-value">0%</div><div class="kpi-label">Achievement completion</div></div>
           </div>
           <div class="game-stats-grid">
             <div class="panel"><h3>Platforms</h3><div id="game-platforms" class="metric-stack"></div></div>
             <div class="panel poster-panel"><h3>Most played games</h3><div id="top-games" class="poster-grid"></div></div>
           </div>
+          <div class="panel mt-4"><h3>Recent play activity</h3><div id="game-history" class="game-history"></div></div>
         </section>
 
         <section id="top-stats" class="section-block" style="display:none">
@@ -131,7 +132,7 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
 </Base>
 
 <style>
-.game-stats-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:1.25rem}.game-stats-grid .panel{min-width:0}@media(max-width:900px){.game-stats-grid{grid-template-columns:1fr}}
+.game-history{display:grid;gap:.45rem}.game-history-row{display:flex;align-items:center;gap:.8rem;padding:.65rem .75rem;border:1px solid rgba(63,63,70,.5);background:rgba(39,39,42,.3);border-radius:.8rem}.game-history-cover{width:34px;height:46px;flex:none;overflow:hidden;border-radius:.4rem;background:#27272a}.game-history-cover img{width:100%;height:100%;object-fit:cover}.game-stats-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:1.25rem}.game-stats-grid .panel{min-width:0}@media(max-width:900px){.game-stats-grid{grid-template-columns:1fr}}
 .stats-page{--border:rgba(63,63,70,.72);--muted:#71717a;--panel:rgba(18,18,21,.78);--panel2:rgba(24,24,27,.88)}
 .stats-page .stats-hero{padding:1.25rem 0 0}.back-link{font-size:.7rem;font-weight:800;color:#71717a;text-transform:uppercase;letter-spacing:.12em}.back-link:hover{color:#d4d4d8}
 .stats-page .eyebrow{font-size:.65rem;font-weight:900;letter-spacing:.18em;text-transform:uppercase;color:#38bdf8}.hero-copy{color:#71717a;font-size:.9rem;margin-top:.55rem}
@@ -702,13 +703,22 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
     const set = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
     set('game-count', Number(games.total_games).toLocaleString());
     set('game-time', fmtGameTime(games.total_playtime_minutes));
-    set('game-plays', Number(games.total_play_count || 0).toLocaleString());
+    set('game-plays', Number(games.recorded_activity_count || 0).toLocaleString());
     set('game-achievements', games.completion_percent == null ? '—' : games.completion_percent + '%');
     const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
     const platforms = document.getElementById('game-platforms');
     if (platforms) platforms.innerHTML = (games.platforms || []).map(p =>
       '<div class="flex items-center gap-3 py-2 border-b border-zinc-800 last:border-0"><span class="font-bold text-zinc-200 flex-1">' + esc(p.platform) + '</span><span class="text-xs text-zinc-500">' + p.games + ' games</span><span class="text-xs font-bold text-zinc-300">' + fmtGameTime(p.playtime_minutes) + '</span></div>'
     ).join('');
+    const history = document.getElementById('game-history');
+    if (history) history.innerHTML = (games.play_history || []).slice(0, 20).map(a =>
+      '<div class="game-history-row"><div class="game-history-cover">' +
+      (a.cover_path ? '<img src="' + esc(a.cover_path) + '" alt="' + esc(a.title) + '" loading="lazy">' : '') +
+      '</div><div class="min-w-0 flex-1"><div class="text-sm font-bold text-zinc-200 truncate">' + esc(a.title) + '</div><div class="text-[11px] text-zinc-500">' +
+      esc(a.platform) + (a.played_at ? ' · ' + new Date(a.played_at + 'Z').toLocaleString() : '') +
+      '</div></div><div class="text-sm font-bold text-zinc-300">' + fmtGameTime(a.duration_minutes) + '</div></div>'
+    ).join('') || '<div class="text-sm text-zinc-500">Noch keine neue Spielaktivität seit Aktivierung der Historie.</div>';
+
     const cards = document.getElementById('top-games');
     if (cards) cards.innerHTML = (games.top_games || []).map(g =>
       '<a href="/game/' + g.id + '" class="group block min-w-0"><div class="aspect-[2/3] rounded-xl overflow-hidden bg-zinc-800 border border-zinc-800 group-hover:border-zinc-600 transition">' +
