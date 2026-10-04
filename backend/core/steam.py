@@ -25,6 +25,13 @@ def _parse_steam_xml(xml_text: str) -> ElementTree.Element:
     )
     # XML 1.0 does not allow these control characters.
     xml_text = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F]", "", xml_text)
+    # Steam has returned game names containing literal "<" characters.
+    # Escape only stray angle brackets; keep real XML tags/declarations intact.
+    xml_text = re.sub(
+        r"<(?!(?:/?[A-Za-z_][A-Za-z0-9_.:-]*(?:\s[^<>]*?)?/?>|![A-Z]+|\?xml\s|/?>))",
+        "&lt;",
+        xml_text,
+    )
     return ElementTree.fromstring(xml_text)
 
 
