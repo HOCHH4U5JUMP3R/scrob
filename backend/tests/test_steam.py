@@ -1,6 +1,6 @@
 from xml.etree import ElementTree
 
-from core.steam import _parse_steam_xml
+from core.steam import _parse_steam_games_html, _parse_steam_xml
 
 
 def test_parse_steam_xml_repairs_unescaped_ampersand():
@@ -26,10 +26,9 @@ def test_parse_steam_xml_removes_invalid_control_characters():
 
 def test_parse_steam_xml_removes_utf8_bom():
     root = _parse_steam_xml(
-        '\\ufeff<?xml version="1.0"?><games><game><name>Steam Game</name></game></games>'
+        '\ufeff<?xml version="1.0"?><games><game><name>Steam Game</name></game></games>'
     )
     assert root.findtext("./game/name") == "Steam Game"
-
 
 
 def test_parse_steam_xml_repairs_literal_angle_bracket_in_text():
@@ -48,3 +47,24 @@ def test_parse_steam_xml_recovers_from_mismatched_tags():
     assert root.findtext("./games/game/appID") == "123"
     assert root.findtext("./games/game/name") == "Broken Game"
     assert root.findtext("./games/game/hoursOnRecord") == "1.5"
+
+
+def test_parse_steam_games_html_extracts_embedded_library():
+    html = '''
+    <script>
+    var rgGames = [{"appid": 123, "name": "Test Game", "playtime_forever": 150, "last_played": 1700000000}];
+    var rgChangingGames = [];
+    </script>
+    '''
+    assert _parse_steam_games_html(html) == [
+        {
+            "appid": "123",
+            "name": "Test Game",
+            "playtime_forever": 150,
+            "rtime_last_played": 1700000000,
+        }
+    ]
+
+
+def test_parse_steam_games_html_returns_empty_without_game_data():
+    assert _parse_steam_games_html("<html><body>No game data</body></html>") == []
