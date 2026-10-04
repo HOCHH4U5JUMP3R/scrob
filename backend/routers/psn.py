@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from core.psn import authenticate, fetch_library
+from core.game_stats import record_game_play_activity
 from db import get_db
 from dependencies import get_current_user
 from models.games import Game, GamePlatform, GameUserStats
