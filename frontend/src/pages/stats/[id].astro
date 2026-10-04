@@ -74,6 +74,16 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
           {[...Array(4)].map(() => <div class="kpi-card skeleton-card animate-pulse"><div class="skeleton h-9 w-20"></div><div class="skeleton h-3 w-28 mt-3"></div></div>)}
         </section>
 
+        <section id="insights-strip" class="insights-strip"></section>
+
+        <section class="panel recap-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">Personal recap</p><h2 id="recap-title">Your entertainment at a glance</h2><p class="panel-subcopy">A few numbers worth knowing about your history.</p></div>
+            <span class="panel-badge">Auto generated</span>
+          </div>
+          <div id="recap-grid" class="recap-grid"></div>
+        </section>
+
         <section class="feature-grid">
           <div class="panel activity-panel hero-panel">
             <div class="panel-heading">
@@ -164,7 +174,7 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
 .kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.8rem}.kpi-card{min-height:132px;padding:1.25rem;border:1px solid var(--border);border-radius:1.15rem;background:linear-gradient(145deg,rgba(30,41,59,.62),var(--panel));display:flex;flex-direction:column;justify-content:center;box-shadow:0 18px 45px rgba(0,0,0,.12);position:relative;overflow:hidden}.kpi-card:after{content:"";position:absolute;width:110px;height:110px;right:-65px;top:-65px;border-radius:50%;background:rgba(56,189,248,.06)}
 .kpi-card p:first-child{font-size:2rem!important;font-weight:950!important;letter-spacing:-.04em}.kpi-card p:last-child{color:#71717a!important;font-size:.65rem!important;font-weight:900!important;letter-spacing:.14em;text-transform:uppercase}
 .kpi-icon{font-size:1rem;margin-bottom:.55rem;opacity:.8}.kpi-value{font-size:2rem;font-weight:950;letter-spacing:-.045em;color:#f4f4f5}.kpi-label{color:#71717a;font-size:.62rem;font-weight:900;letter-spacing:.12em;text-transform:uppercase;margin-top:.2rem}.skeleton-card{box-shadow:none}
-.feature-grid{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(300px,.8fr);gap:1rem}.panel{border:1px solid var(--border);border-radius:1.15rem;background:linear-gradient(145deg,var(--panel2),var(--panel));padding:1.3rem;box-shadow:0 18px 50px rgba(0,0,0,.12);min-width:0}.panel:hover{border-color:rgba(113,113,122,.68)}.hero-panel{min-height:330px}
+.insights-strip{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.75rem}.insight-card{min-height:112px;padding:1rem;border:1px solid var(--border);border-radius:1rem;background:linear-gradient(145deg,rgba(39,39,42,.7),rgba(17,17,20,.78));display:flex;align-items:flex-start;gap:.75rem}.insight-icon{font-size:1.35rem;line-height:1.1}.insight-value{font-size:1.2rem;font-weight:950;letter-spacing:-.025em;color:#f4f4f5;margin-top:.18rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}.insight-detail,.recap-detail{font-size:.65rem;color:#71717a;font-weight:700;margin-top:.15rem}.recap-panel{overflow:hidden}.recap-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.75rem}.recap-card{padding:1rem;border:1px solid rgba(63,63,70,.52);background:rgba(39,39,42,.28);border-radius:.9rem;min-width:0}.recap-icon{font-size:1.2rem;margin-bottom:.65rem}.recap-title{font-size:.95rem;font-weight:900;color:#e4e4e7;margin-top:.25rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.recap-detail{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}..feature-grid{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(300px,.8fr);gap:1rem}.panel{border:1px solid var(--border);border-radius:1.15rem;background:linear-gradient(145deg,var(--panel2),var(--panel));padding:1.3rem;box-shadow:0 18px 50px rgba(0,0,0,.12);min-width:0}.panel:hover{border-color:rgba(113,113,122,.68)}.hero-panel{min-height:330px}
 .panel-heading,.section-title{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}.panel h2,.section-title h2{font-size:1.35rem;font-weight:900;letter-spacing:-.025em;color:#f4f4f5;margin-top:.2rem}.panel h3{font-size:.68rem;font-weight:900;letter-spacing:.14em;text-transform:uppercase;color:#a1a1aa;margin-bottom:1rem}.panel-subcopy,.section-copy{font-size:.78rem;color:#52525b;margin-top:.3rem}.panel-badge{font-size:.58rem;font-weight:950;text-transform:uppercase;letter-spacing:.1em;color:#71717a;border:1px solid var(--border);border-radius:999px;padding:.4rem .65rem;white-space:nowrap}
 .eyebrow{font-size:.62rem;font-weight:950;letter-spacing:.18em;text-transform:uppercase;color:#38bdf8}.section-block{padding-top:.25rem}.section-title{margin-bottom:1rem}
 .chart-lg{height:250px}.chart-md{height:170px}.chart-sm{height:135px;margin-top:1rem}.metric-stack{display:grid;gap:.55rem}.metric-stack>div:not(.skeleton){border:1px solid rgba(63,63,70,.5);background:rgba(39,39,42,.3);border-radius:.8rem}
@@ -172,8 +182,8 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
 .game-section{border-top:1px solid rgba(63,63,70,.35);padding-top:2rem}.game-eyebrow{color:#a78bfa}.game-overview{margin-bottom:1rem}.game-platform-area{min-width:0}.game-stats-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:1rem}.game-subheading{font-size:.62rem;font-weight:950;letter-spacing:.15em;text-transform:uppercase;color:#71717a;margin:0 0 .8rem}.platform-kpi-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem}.platform-kpi-card{min-height:128px;padding:1rem;text-align:center;align-items:center}.platform-icon-wrap{height:32px;display:flex;align-items:center;justify-content:center;margin-bottom:.45rem;color:#a1a1aa}.platform-logo{width:42px;height:32px}.platform-emoji{font-size:1.8rem;line-height:1}.platform-kpi-card .kpi-value{font-size:1.8rem}.platform-kpi-card .kpi-label{white-space:nowrap}.spotlight-panel{min-height:0}.poster-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.8rem}.history-panel{margin-top:0}.game-history{display:grid;gap:.45rem}.game-history-row{display:flex;align-items:center;gap:.8rem;padding:.65rem .75rem;border:1px solid rgba(63,63,70,.5);background:rgba(39,39,42,.3);border-radius:.8rem}.game-history-cover{width:34px;height:46px;flex:none;overflow:hidden;border-radius:.4rem;background:#27272a}.game-history-cover img{width:100%;height:100%;object-fit:cover}
 .top-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.collection-grid{display:grid;grid-template-columns:.8fr 1.2fr;gap:1rem}.pie-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;align-items:center}.chip-grid{display:flex;flex-wrap:wrap;gap:.45rem}
 .skeleton{background:linear-gradient(90deg,rgba(39,39,42,.5),rgba(63,63,70,.5),rgba(39,39,42,.5));border-radius:.7rem;animation:pulse 1.5s infinite}@keyframes pulse{50%{opacity:.45}}.stats-page img{background:#27272a}.stats-footer{display:flex;justify-content:space-between;padding:1.5rem 0 2rem;color:#3f3f46;font-size:.58rem;font-weight:900;letter-spacing:.15em;text-transform:uppercase}
-@media(max-width:900px){.hero-content{align-items:stretch;flex-direction:column;min-height:0}.hero-kicker{margin-top:2.5rem}.glass-control{width:100%}.kpi-grid{grid-template-columns:repeat(2,1fr)}.feature-grid,.taste-grid,.top-grid,.collection-grid,.game-stats-grid{grid-template-columns:1fr}.poster-grid{grid-template-columns:repeat(4,1fr)}}
-@media(max-width:560px){.stats-page{padding-left:1rem;padding-right:1rem}.page-title{font-size:clamp(2.6rem,13vw,4rem)}.hero-copy{font-size:.9rem}.kpi-card{min-height:105px;padding:1rem}.kpi-value{font-size:1.55rem}.kpi-card p:first-child{font-size:1.55rem!important}.period-control{width:100%}.poster-grid{grid-template-columns:repeat(3,1fr)}.genre-columns{grid-template-columns:1fr}.pie-grid{gap:.4rem}.stats-footer{display:none}.platform-kpi-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:1100px){.insights-strip,.recap-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:900px){.hero-content{align-items:stretch;flex-direction:column;min-height:0}.hero-kicker{margin-top:2.5rem}.glass-control{width:100%}.kpi-grid{grid-template-columns:repeat(2,1fr)}.feature-grid,.taste-grid,.top-grid,.collection-grid,.game-stats-grid{grid-template-columns:1fr}.poster-grid{grid-template-columns:repeat(4,1fr)}}
+@media(max-width:560px){.insights-strip,.recap-grid{grid-template-columns:1fr 1fr}.stats-page{padding-left:1rem;padding-right:1rem}.page-title{font-size:clamp(2.6rem,13vw,4rem)}.hero-copy{font-size:.9rem}.kpi-card{min-height:105px;padding:1rem}.kpi-value{font-size:1.55rem}.kpi-card p:first-child{font-size:1.55rem!important}.period-control{width:100%}.poster-grid{grid-template-columns:repeat(3,1fr)}.genre-columns{grid-template-columns:1fr}.pie-grid{gap:.4rem}.stats-footer{display:none}.platform-kpi-grid{grid-template-columns:1fr 1fr}}
 </style>
 <script define:vars={{ userId: id, token, isOwnStats }}>
   // ── State ──────────────────────────────────────────────────────────────────
@@ -291,8 +301,62 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
       `).join('');
     }
 
-    // Activity chart
+    // Personal insights and recap
     const isDaily = data.granularity === 'day';
+    const insights = document.getElementById('insights-strip');
+    const recapGrid = document.getElementById('recap-grid');
+    const recapTitle = document.getElementById('recap-title');
+    const fmtShort = mins => {
+      const n = Number(mins || 0);
+      if (n < 60) return `${Math.round(n)}m`;
+      const h = Math.floor(n / 60), m = Math.round(n % 60);
+      return m ? `${h}h ${m}m` : `${h}h`;
+    };
+    const safe = n => Number.isFinite(Number(n)) ? Number(n) : 0;
+    const top = arr => (arr || []).filter(Boolean)[0];
+    const activity = (data.watch_activity || []).filter(d => safe(d.movies) + safe(d.episodes) > 0);
+    const peak = activity.reduce((best, d) =>
+      !best || safe(d.movies) + safe(d.episodes) > safe(best.movies) + safe(best.episodes) ? d : best, null);
+    const ratingValues = (data.rating_distribution || []).reduce((sum, d) => sum + safe(d.rating) * safe(d.count), 0);
+    const ratingCount = (data.rating_distribution || []).reduce((sum, d) => sum + safe(d.count), 0);
+    const weightedRating = ratingCount ? ratingValues / ratingCount : null;
+    const peakDay = (data.weekday_activity || []).filter(d => safe(d.avg) > 0)
+      .reduce((best, d) => !best || safe(d.avg) > safe(best.avg) ? d : best, null);
+    const topMovie = top(data.top_movies);
+    const topShow = top(data.top_shows);
+    const topGame = top(data.games?.top_games);
+    const gameHours = safe(data.games?.total_playtime_minutes) / 60;
+
+    if (insights) {
+      const items = [];
+      if (peak) {
+        const parts = String(peak.month).split('-');
+        const label = isDaily ? `${monthNames[Number(parts[1])-1]} ${parts[2]}` : `${monthNames[Number(parts[1])-1]} ${parts[0]}`;
+        items.push({icon:'🔥', eyebrow:'Peak period', value:label, detail:`${safe(peak.movies)+safe(peak.episodes)} watches`});
+      }
+      if (peakDay) items.push({icon:'📅', eyebrow:'Favourite day', value:peakDay.day, detail:`Most active on average`});
+      if (weightedRating != null) items.push({icon:'⭐', eyebrow:'Average rating', value:weightedRating.toFixed(1), detail:`${ratingCount.toLocaleString()} ratings`});
+      if (data.total_watch_minutes > 0) items.push({icon:'⏱️', eyebrow:'Time invested', value:formatMinutes(data.total_watch_minutes), detail:'watch time'});
+      if (gameHours > 0) items.push({icon:'🎮', eyebrow:'Gaming time', value:formatMinutes(data.games.total_playtime_minutes), detail:`${safe(data.games.total_games).toLocaleString()} games`});
+      insights.innerHTML = items.slice(0,5).map(x => `
+        <div class="insight-card"><div class="insight-icon">${x.icon}</div><div><div class="eyebrow">${x.eyebrow}</div><div class="insight-value">${x.value}</div><div class="insight-detail">${x.detail}</div></div></div>
+      `).join('');
+    }
+
+    if (recapGrid) {
+      const records = [];
+      if (topMovie) records.push({label:'Most watched movie', title:topMovie.title, detail:`${topMovie.plays || 0} plays · ${fmtShort(topMovie.minutes)}`, icon:'🎬'});
+      if (topShow) records.push({label:'Most watched show', title:topShow.title, detail:`${topShow.plays || 0} plays · ${fmtShort(topShow.minutes)}`, icon:'📺'});
+      if (topGame) records.push({label:'Most played game', title:topGame.title, detail:`${topGame.playtime_minutes || topGame.minutes || 0} min`, icon:'🎮'});
+      if (data.movies_collected) records.push({label:'Movie collection', title:`${((data.movies_watched_collected || 0) / data.movies_collected * 100).toFixed(0)}% explored`, detail:`${data.movies_watched_collected || 0} of ${data.movies_collected} watched`, icon:'🍿'});
+      if (data.shows_collected) records.push({label:'TV collection', title:`${((data.shows_watched_collected || 0) / data.shows_collected * 100).toFixed(0)}% explored`, detail:`${data.shows_watched_collected || 0} of ${data.shows_collected} watched`, icon:'📡'});
+      recapGrid.innerHTML = records.map(x => `
+        <div class="recap-card"><div class="recap-icon">${x.icon}</div><div class="eyebrow">${x.label}</div><div class="recap-title" title="${String(x.title).replace(/"/g,'&quot;')}">${x.title}</div><div class="recap-detail">${x.detail}</div></div>
+      `).join('');
+      if (recapTitle && currentPeriod !== 'all') recapTitle.textContent = `Your ${computeRange(currentPeriod).label.toLowerCase()} at a glance`;
+    }
+
+    // Activity chart
     const activityChart = document.getElementById('activity-chart');
     if (activityChart) {
       let activityData = since && until
