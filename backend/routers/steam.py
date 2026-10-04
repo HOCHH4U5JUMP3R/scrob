@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from core.config import settings as app_settings
 from core.steam import authorization_url, fetch_library, get_player, verify_openid
+from core.game_stats import record_game_play_activity
 from db import async_sessionmaker, engine, get_db
 from dependencies import get_current_user
 from models.games import Game, GamePlatform, GameUserStats
@@ -212,12 +213,25 @@ async def _sync_steam(db: AsyncSession, user_id: int) -> int:
             stats = GameUserStats(user_id=user_id, game_id=game.id, platform="steam")
             db.add(stats)
 
+        previous_playtime = stats.playtime_minutes
+        current_playtime = int(item["playtime_forever"]) if item.get("playtime_forever") is not None else None
+        last_played_at = None
+        if item.get("rtime_last_played"):
+            last_played_at = datetime.fromtimestamp(
+                int(item["rtime_last_played"]), tz=timezone.utc
+            ).replace(tzinfo=None)
+        await record_game_play_activity(
+            db, user_id=user_id, game_id=game.id, platform="steam",
+            previous_playtime_minutes=previous_playtime,
+            current_playtime_minutes=current_playtime,
+            last_played_at=last_played_at, source="steam",
+        )
+
         if item.get("playtime_forever") is not None:
             stats.playtime_minutes = int(item["playtime_forever"])
         if item.get("rtime_last_played"):
-            stats.last_played_at = datetime.fromtimestamp(
-                int(item["rtime_last_played"]), tz=timezone.utc
-            ).replace(tzinfo=None)
+            dt = datetime.fromtimestamp(int(item["rtime_last_played"]), tz=timezone.utc).replace(tzinfo=None)
+            stats.last_played_at = dt
 
         imported += 1
 
