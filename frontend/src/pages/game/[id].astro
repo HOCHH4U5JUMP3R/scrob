@@ -190,7 +190,7 @@ const latestPlayed = stats
                     <p class="text-sm font-black text-zinc-200 truncate">{activity.platform}</p>
                     <p class="text-xs text-zinc-500 mt-1">
                       {activity.played_at ? formatDate(activity.played_at) : "Unknown date"}
-                      {activity.observed_at ? {' · recorded ' + formatDate(activity.observed_at)} : ""}
+                      {activity.observed_at ? " · recorded " + formatDate(activity.observed_at) : ""}
                     </p>
                   </div>
                   <div class="text-sm font-black text-zinc-200 whitespace-nowrap">{formatMinutes(activity.duration_minutes)}</div>
