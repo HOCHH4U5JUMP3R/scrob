@@ -1562,6 +1562,7 @@ async def get_user_stats(
             return 0
 
     for row in game_rows:
+        normalized_platform = normalize_game_platform(row.platform)
         game = game_by_id.setdefault(row.id, {
             "id": row.id, "title": row.title, "cover_path": row.cover_path,
             "playtime_minutes": 0, "play_count": 0, "platforms": set(),
@@ -1572,7 +1573,7 @@ async def get_user_stats(
         plays = max(int(row.play_count or 0), 0)
         game["playtime_minutes"] += minutes
         game["play_count"] += plays
-        game["platforms"].add(row.platform)
+        game["platforms"].add(normalized_platform)
         if row.first_played_at and (game["first_played_at"] is None or row.first_played_at < game["first_played_at"]):
             game["first_played_at"] = row.first_played_at
         if row.last_played_at and (game["last_played_at"] is None or row.last_played_at > game["last_played_at"]):
@@ -1587,7 +1588,7 @@ async def get_user_stats(
         game["trophies_earned"] += earned
         game["trophies_defined"] += defined
 
-        platform = game_platforms[row.platform]
+        platform = game_platforms[normalized_platform]
         platform["games"].add(row.id)
         platform["playtime_minutes"] += minutes
         platform["play_count"] += plays
@@ -1640,7 +1641,7 @@ async def get_user_stats(
             "game_id": row.game_id,
             "title": row.title,
             "cover_path": row.cover_path,
-            "platform": row.platform,
+            "platform": normalize_game_platform(row.platform),
             "played_at": row.played_at.isoformat() if row.played_at else None,
             "duration_minutes": row.duration_minutes,
             "observed_at": row.observed_at.isoformat() if row.observed_at else None,
