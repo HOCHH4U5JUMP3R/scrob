@@ -251,6 +251,7 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   function renderStats(data, since, until) {
+    const isDaily = data.granularity === 'day';
     const totalH = Math.round(data.total_watch_minutes / 60);
     const totalD = (data.total_watch_minutes / 60 / 24).toFixed(1);
 
