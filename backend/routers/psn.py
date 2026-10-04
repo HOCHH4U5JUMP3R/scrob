@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from core.psn import authenticate, fetch_library
+from core.game_stats import record_game_play_activity
 from db import get_db
 from dependencies import get_current_user
 from models.games import Game, GamePlatform, GameUserStats
@@ -249,6 +250,14 @@ async def _sync_psn(db: AsyncSession, user_id: int) -> int:
         if not stats:
             stats = GameUserStats(user_id=user_id, game_id=game.id, platform=platform)
             db.add(stats)
+
+        await record_game_play_activity(
+            db, user_id=user_id, game_id=game.id, platform=platform,
+            previous_playtime_minutes=stats.playtime_minutes,
+            current_playtime_minutes=item.get("playtime_minutes"),
+            last_played_at=item.get("last_played_at"),
+            source="psn",
+        )
 
         for field in (
             "play_count", "playtime_minutes", "first_played_at",
