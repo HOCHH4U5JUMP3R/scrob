@@ -17,7 +17,9 @@ const { token } = Astro.locals;
           <p id="psn-status" class="text-xs text-zinc-500 mt-0.5">Checking connection…</p>
           <p id="psn-sync-status" class="text-[10px] text-zinc-600 mt-0.5">Last synced: —</p>
         </div>
-        <span class="text-zinc-500 transition-transform group-open:rotate-180">⌄</span>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="game-network-chevron w-4 h-4 text-zinc-500 transition-transform pointer-events-none ml-1 shrink-0">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+        </svg>
         <button id="psn-disconnect-btn" type="button" class="hidden absolute right-14 top-4 px-2.5 py-1.5 rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-500 text-[11px] font-bold hover:border-zinc-600 hover:text-zinc-200 transition z-10">Disconnect</button>
       </summary>
       <div class="border-t border-zinc-800 px-6 py-5">
@@ -59,7 +61,9 @@ const { token } = Astro.locals;
           <p id="xbox-status" class="text-xs text-zinc-500 mt-0.5">Checking connection…</p>
           <p id="xbox-sync-status" class="text-[10px] text-zinc-600 mt-0.5">Last synced: —</p>
         </div>
-        <span class="text-zinc-500 transition-transform group-open:rotate-180">⌄</span>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="game-network-chevron w-4 h-4 text-zinc-500 transition-transform pointer-events-none ml-1 shrink-0">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+        </svg>
         <button id="xbox-disconnect-btn" type="button" class="hidden absolute right-14 top-4 px-2.5 py-1.5 rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-500 text-[11px] font-bold hover:border-zinc-600 hover:text-zinc-200 transition z-10">Disconnect</button>
       </summary>
       <div class="border-t border-zinc-800 px-6 py-5">
@@ -71,7 +75,7 @@ const { token } = Astro.locals;
             <button id="xbox-complete-btn" type="button" class="w-full px-4 py-3 rounded-xl bg-sky-500 text-white font-black text-sm hover:bg-sky-400 disabled:opacity-50">Complete Xbox connection</button>
           </div>
         </div>
-        <div id="xbox-connected-actions" class="hidden items-center gap-2 flex-wrap">
+        <div id="xbox-connected-actions" class="hidden flex items-center gap-2 flex-wrap">
           <button id="xbox-sync-btn" type="button" class="px-4 py-2.5 rounded-xl bg-sky-500 text-white font-black text-sm hover:bg-sky-400 disabled:opacity-50">Sync games</button>
           <label class="flex items-center gap-2 text-xs text-zinc-500">Auto sync
             <select id="xbox-auto-sync" class="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-300">
@@ -93,7 +97,9 @@ const { token } = Astro.locals;
           <p id="steam-status" class="text-xs text-zinc-500 mt-0.5">Checking connection…</p>
           <p id="steam-sync-status" class="text-[10px] text-zinc-600 mt-0.5">Last synced: —</p>
         </div>
-        <span class="text-zinc-500 transition-transform group-open:rotate-180">⌄</span>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="game-network-chevron w-4 h-4 text-zinc-500 transition-transform pointer-events-none ml-1 shrink-0">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+        </svg>
         <button id="steam-disconnect-btn" type="button" class="hidden absolute right-14 top-4 px-2.5 py-1.5 rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-500 text-[11px] font-bold hover:border-zinc-600 hover:text-zinc-200 transition z-10">Disconnect</button>
       </summary>
       <div class="border-t border-zinc-800 px-6 py-5">
@@ -117,6 +123,17 @@ const { token } = Astro.locals;
       </div>
     </details>
   </div>
+
+  <div class="mt-4 rounded-2xl border border-red-900/40 bg-red-950/10 px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
+    <div>
+      <p class="text-sm font-semibold text-zinc-200">Game library</p>
+      <p class="text-xs text-zinc-500 mt-0.5">Remove your synchronized game statistics and orphaned game entries, then sync the services again from scratch.</p>
+    </div>
+    <button id="games-delete-all-btn" type="button"
+      class="px-3 py-2 rounded-lg border border-red-900/60 text-red-400 text-xs font-bold hover:bg-red-950/40 hover:border-red-700 transition disabled:opacity-50">
+      Delete synced games
+    </button>
+  </div>
 </section>
 
 <style>
@@ -125,6 +142,30 @@ const { token } = Astro.locals;
 </style>
 
 <script define:vars={{ token }}>
+  const deleteGamesBtn = document.getElementById("games-delete-all-btn");
+
+  deleteGamesBtn?.addEventListener("click", async () => {
+    if (!confirm("Delete all synchronized game data for your account? This cannot be undone.")) return;
+    deleteGamesBtn.disabled = true;
+    const originalText = deleteGamesBtn.textContent;
+    deleteGamesBtn.textContent = "Deleting…";
+    try {
+      const res = await api("/games/library", { method: "DELETE" });
+      if (!res.ok) throw new Error(await readError(res, "Could not delete the game library."));
+      deleteGamesBtn.textContent = "Deleted";
+      setTimeout(() => location.reload(), 500);
+    } catch (error) {
+      deleteGamesBtn.disabled = false;
+      deleteGamesBtn.textContent = originalText || "Delete synced games";
+      const messageEl = document.getElementById("psn-message");
+      if (messageEl) {
+        messageEl.textContent = error?.message || "Could not delete the game library.";
+        messageEl.className = "mt-3 text-xs text-red-400";
+        messageEl.classList.remove("hidden");
+      }
+    }
+  });
+
   const api = (path, options = {}) => fetch("/api/proxy" + path, {
     ...options,
     headers: {
@@ -164,8 +205,8 @@ const { token } = Astro.locals;
   const steamRedirectUrl = document.getElementById("steam-redirect-url");
   document.querySelectorAll("#game-networks details").forEach((details) => {
     details.addEventListener("toggle", () => {
-      const icon = details.querySelector("[data-chevron]");
-      if (icon) icon.textContent = details.open ? "⌃" : "⌄";
+      const icon = details.querySelector(".game-network-chevron");
+      if (icon) icon.classList.toggle("rotate-180", details.open);
     });
   });
 
