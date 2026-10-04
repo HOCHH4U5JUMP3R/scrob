@@ -13,6 +13,17 @@ STEAM_OPENID_URL = "https://steamcommunity.com/openid/login"
 STEAM_COMMUNITY_URL = "https://steamcommunity.com"
 
 
+def _parse_steam_xml(xml_text: str) -> ElementTree.Element:
+    """Parse Steam's legacy XML while tolerating invalid text from game names."""
+    xml_text = re.sub(
+        r"&(?!#(?:x[0-9A-Fa-f]+|[0-9]+);|[A-Za-z][A-Za-z0-9]+;)",
+        "&amp;",
+        xml_text,
+    )
+    xml_text = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F]", "", xml_text)
+    return ElementTree.fromstring(xml_text)
+
+
 def authorization_url(return_to: str) -> str:
     params = {
         "openid.ns": "http://specs.openid.net/auth/2.0",
