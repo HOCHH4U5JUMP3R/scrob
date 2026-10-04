@@ -703,7 +703,7 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
     const set = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
     set('game-count', Number(games.total_games).toLocaleString());
     set('game-time', fmtGameTime(games.total_playtime_minutes));
-    set('game-plays', Number(games.total_play_count || 0).toLocaleString());
+    set('game-plays', Number(games.recorded_activity_count || 0).toLocaleString());
     set('game-achievements', games.completion_percent == null ? '—' : games.completion_percent + '%');
     const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
     const platforms = document.getElementById('game-platforms');
