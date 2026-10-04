@@ -652,7 +652,7 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
           ${posterUrl(it.poster_path) ? `<img src="${esc(posterUrl(it.poster_path))}" alt="${esc(it.title)}" loading="lazy" class="w-full h-full object-cover group-hover:scale-105 transition-transform">` : ''}
         </div>
         <div class="text-xs text-zinc-300 font-semibold mt-1.5 truncate">${esc(it.title)}</div>
-        <div class="text-[11px] text-zinc-500">${it.plays} play${it.plays === 1 ? '' : 's'} · ${fmtH(it.minutes || 0)}</div>
+        <div class="text-[11px] text-zinc-500">${it.plays} play${it.plays === 1 ? '' : 's'}<br>${fmtH(it.minutes || 0)}</div>
       </a>`).join('');
     document.getElementById('top-shows').innerHTML = posters(data.top_shows);
     document.getElementById('top-movies').innerHTML = posters(data.top_movies);
@@ -748,7 +748,7 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
             (a.cover_path ? '<img src="' + esc(a.cover_path) + '" alt="' + esc(a.title) + '" loading="lazy" class="w-full h-full object-cover">' : '<div class="w-full h-full flex items-center justify-center text-zinc-600 text-xs font-bold p-3 text-center">' + esc(a.title) + '</div>') +
           '</div>' +
           '<div class="text-xs text-zinc-300 font-semibold mt-1.5 truncate" title="' + esc(a.title) + '">' + esc(a.title) + '</div>' +
-          '<div class="game-activity-meta flex items-center gap-1.5">' + icon + '<span>' + esc(platform) + ' · +' + fmtGameTime(a.duration_minutes) + ' · ' + (a.played_at ? fmtDateTime(a.played_at) : '—') + '</span></div>' +
+          '<div class="game-activity-meta flex items-center gap-1.5">' + icon + '<span>' + (a.played_at ? fmtDateTime(a.played_at) : '—') + ' · +' + fmtGameTime(a.duration_minutes) + '</span></div>' +
         '</a>';
       }).join('') || '<div class="text-sm text-zinc-500 py-2">Noch keine neue Spielaktivität seit Aktivierung der Historie.</div>';
     }
