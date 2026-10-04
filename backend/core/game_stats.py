@@ -33,16 +33,17 @@ async def record_game_play_activity(
         return 0
 
     duration = current - previous
+    observed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.add(
         GamePlayActivity(
             user_id=user_id,
             game_id=game_id,
             platform=platform,
-            played_at=last_played_at,
+            played_at=last_played_at or observed_at,
             duration_minutes=duration,
             playtime_before_minutes=previous,
             playtime_after_minutes=current,
-            observed_at=datetime.now(timezone.utc).replace(tzinfo=None),
+            observed_at=observed_at,
             source=source,
         )
     )
