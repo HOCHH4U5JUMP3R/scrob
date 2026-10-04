@@ -63,53 +63,65 @@ def _parse_steam_xml(xml_text: str) -> ElementTree.Element:
 
 
 def _parse_steam_games_html(html_text: str) -> list[dict]:
-    """Extract the public game list embedded in Steam's games page."""
-    marker = "var rgGames = "
-    start = html_text.find(marker)
-    if start < 0:
-        return []
-
-    payload = html_text[start + len(marker):]
-    try:
-        games, _ = json.JSONDecoder().raw_decode(payload)
-    except json.JSONDecodeError:
-        return []
-
-    if not isinstance(games, list):
-        return []
-
-    result: list[dict] = []
-    for game in games:
-        if not isinstance(game, dict):
+    """Extract Steam's public game data from the games page."""
+    for marker in ("var g_rgGameData = ", "var rgGames = "):
+        start = html_text.find(marker)
+        if start < 0:
             continue
 
-        appid = game.get("appid")
-        name = game.get("name")
-        if appid is None or not name:
+        payload = html_text[start + len(marker):]
+        try:
+            games, _ = json.JSONDecoder().raw_decode(payload)
+        except json.JSONDecodeError:
             continue
 
-        playtime = game.get("playtime_forever") or 0
-        try:
-            playtime = int(playtime)
-        except (TypeError, ValueError):
-            playtime = 0
+        if isinstance(games, dict):
+            games = list(games.values())
+        if not isinstance(games, list):
+            continue
 
-        last_played = game.get("last_played")
-        try:
-            last_played = int(last_played) if last_played else None
-        except (TypeError, ValueError):
-            last_played = None
+        result: list[dict] = []
+        for game in games:
+            if not isinstance(game, dict):
+                continue
 
-        result.append(
-            {
-                "appid": str(appid),
-                "name": str(name).strip(),
-                "playtime_forever": playtime,
-                "rtime_last_played": last_played,
-            }
-        )
+            appid = game.get("appid") or game.get("app_id")
+            name = game.get("name")
+            if appid is None or not name:
+                continue
 
-    return result
+            playtime = game.get("playtime_forever")
+            if playtime is None:
+                playtime = game.get("hoursOnRecord")
+                try:
+                    playtime = int(float(playtime or 0) * 60)
+                except (TypeError, ValueError):
+                    playtime = 0
+            else:
+                try:
+                    playtime = int(playtime)
+                except (TypeError, ValueError):
+                    playtime = 0
+
+            last_played = game.get("last_played", game.get("rtime_last_played"))
+            try:
+                last_played = int(last_played) if last_played else None
+            except (TypeError, ValueError):
+                last_played = None
+
+            result.append(
+                {
+                    "appid": str(appid),
+                    "name": str(name).strip(),
+                    "playtime_forever": playtime,
+                    "rtime_last_played": last_played,
+                }
+            )
+
+        if result:
+            return result
+
+    return []
 
 
 def authorization_url(return_to: str) -> str:
@@ -172,6 +184,7 @@ async def fetch_library(steam_id: str) -> dict:
     html_url = f"{STEAM_COMMUNITY_URL}/profiles/{steam_id}/games/?tab=all"
     headers = {
         "User-Agent": "Scrob/1.0",
+        "X-ValveUserAgent": "panorama",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
 
@@ -208,9 +221,6 @@ async def fetch_library(steam_id: str) -> dict:
         if games:
             return {"games": games}
 
-        # Steam's deprecated XML feed can return an empty result even for a
-        # public library. The normal games page embeds the same public data in
-        # rgGames and is the more reliable fallback.
         html_response = await client.get(html_url)
         html_response.raise_for_status()
         games = _parse_steam_games_html(html_response.text)
