@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 from xml.etree import ElementTree
+import re
 
 import httpx
 
@@ -78,7 +79,18 @@ async def fetch_library(steam_id: str) -> dict:
         response = await client.get(url)
         response.raise_for_status()
 
-    root = ElementTree.fromstring(response.text)
+    # Steam's legacy XML feed occasionally contains game names with a raw
+    # ampersand (or other characters that are legal in text but not in XML).
+    # ElementTree is intentionally strict and otherwise turns a perfectly
+    # usable public library into a ParseError. Repair only invalid ampersands
+    # and XML control characters; valid XML entities remain untouched.
+    xml_text = re.sub(
+        r"&(?!#(?:x[0-9A-Fa-f]+|[0-9]+);|[A-Za-z][A-Za-z0-9]+;)",
+        "&amp;",
+        response.text,
+    )
+    xml_text = re.sub(r"[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]", "", xml_text)
+    root = ElementTree.fromstring(xml_text)
     error = root.findtext("error")
     if error:
         raise ValueError(error.strip())
