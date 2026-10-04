@@ -1522,8 +1522,8 @@ async def get_user_stats(
           "plays": s["plays"], "minutes": s["minutes"], "episodes": len(s["episodes"])}
          for sid, s in per_show.items()),
         key=lambda x: (x["plays"], x["minutes"]), reverse=True,
-    )[:12]
-    top_movies = sorted(per_movie.values(), key=lambda x: (x["plays"], x["minutes"]), reverse=True)[:12]
+    )[:15]
+    top_movies = sorted(per_movie.values(), key=lambda x: (x["plays"], x["minutes"]), reverse=True)[:15]
     # Networks come from the same instance-wide TMDB credits cache as the people
     # stats below (core/credits.py) - it already fetches a full show response per
     # watched title, so this reuses that instead of relying on Show.tmdb_data
@@ -1666,7 +1666,7 @@ async def get_user_stats(
         "completion_percent": round(total_game_achievements / total_game_achievements_defined * 100, 1) if total_game_achievements_defined else None,
         "first_played_at": game_first_played.isoformat() if game_first_played else None,
         "last_played_at": game_last_played.isoformat() if game_last_played else None,
-        "platforms": game_platform_stats, "top_games": top_games[:12],
+        "platforms": game_platform_stats, "top_games": top_games[:15],
         "play_history": play_history, "recorded_activity_count": len(play_history),
         "recorded_playtime_minutes": recorded_playtime, "all_time": True,
     }
