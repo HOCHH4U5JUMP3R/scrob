@@ -27,6 +27,7 @@ from models.comments import Comment as CommentModel
 from models.lists import List as ListModel, ListItem
 from models.follows import Follow
 from models.global_settings import GlobalSettings
+from models.games import Game, GameUserStats
 from core.config import settings
 import schemas
 
@@ -1528,6 +1529,106 @@ async def get_user_stats(
     top_people = await credits_stats(db, user_id, date_filters)
     top_networks = top_people.pop("networks")
 
+    # ── Games ────────────────────────────────────────────────────────────────
+    # Game integrations store a current per-platform snapshot rather than a
+    # historical play-event stream. Aggregate those snapshots here so games
+    # become a first-class part of the same profile statistics payload.
+    game_rows = (await db.execute(
+        select(
+            Game.id, Game.title, Game.cover_path,
+            GameUserStats.platform, GameUserStats.play_count,
+            GameUserStats.playtime_minutes, GameUserStats.first_played_at,
+            GameUserStats.last_played_at, GameUserStats.trophies_earned,
+            GameUserStats.trophies_defined,
+        )
+        .join(GameUserStats, GameUserStats.game_id == Game.id)
+        .where(GameUserStats.user_id == user_id)
+    )).all()
+
+    game_by_id: dict[int, dict] = {}
+    game_platforms: dict[str, dict] = defaultdict(lambda: {"games": set(), "playtime_minutes": 0, "play_count": 0})
+    total_game_playtime = total_game_plays = 0
+    total_game_achievements = total_game_achievements_defined = 0
+    game_first_played = game_last_played = None
+
+    def _achievement_count(value, key: str) -> int:
+        if not isinstance(value, dict):
+            return 0
+        try:
+            return max(int(value.get(key, 0) or 0), 0)
+        except (TypeError, ValueError):
+            return 0
+
+    for row in game_rows:
+        game = game_by_id.setdefault(row.id, {
+            "id": row.id, "title": row.title, "cover_path": row.cover_path,
+            "playtime_minutes": 0, "play_count": 0, "platforms": set(),
+            "first_played_at": None, "last_played_at": None,
+            "trophies_earned": 0, "trophies_defined": 0,
+        })
+        minutes = max(int(row.playtime_minutes or 0), 0)
+        plays = max(int(row.play_count or 0), 0)
+        game["playtime_minutes"] += minutes
+        game["play_count"] += plays
+        game["platforms"].add(row.platform)
+        if row.first_played_at and (game["first_played_at"] is None or row.first_played_at < game["first_played_at"]):
+            game["first_played_at"] = row.first_played_at
+        if row.last_played_at and (game["last_played_at"] is None or row.last_played_at > game["last_played_at"]):
+            game["last_played_at"] = row.last_played_at
+
+        earned = _achievement_count(row.trophies_earned, "achievements")
+        defined = _achievement_count(row.trophies_defined, "achievements")
+        if isinstance(row.trophies_earned, dict) and not earned:
+            earned = sum(_achievement_count(row.trophies_earned, k) for k in ("bronze", "silver", "gold", "platinum"))
+        if isinstance(row.trophies_defined, dict) and not defined:
+            defined = sum(_achievement_count(row.trophies_defined, k) for k in ("bronze", "silver", "gold", "platinum"))
+        game["trophies_earned"] += earned
+        game["trophies_defined"] += defined
+
+        platform = game_platforms[row.platform]
+        platform["games"].add(row.id)
+        platform["playtime_minutes"] += minutes
+        platform["play_count"] += plays
+        total_game_playtime += minutes
+        total_game_plays += plays
+        total_game_achievements += earned
+        total_game_achievements_defined += defined
+        if row.first_played_at and (game_first_played is None or row.first_played_at < game_first_played):
+            game_first_played = row.first_played_at
+        if row.last_played_at and (game_last_played is None or row.last_played_at > game_last_played):
+            game_last_played = row.last_played_at
+
+    top_games = []
+    for game in game_by_id.values():
+        completion = round(game["trophies_earned"] / game["trophies_defined"] * 100, 1) if game["trophies_defined"] else None
+        top_games.append({
+            "id": game["id"], "title": game["title"], "cover_path": game["cover_path"],
+            "playtime_minutes": game["playtime_minutes"], "play_count": game["play_count"],
+            "platforms": sorted(game["platforms"]),
+            "first_played_at": game["first_played_at"].isoformat() if game["first_played_at"] else None,
+            "last_played_at": game["last_played_at"].isoformat() if game["last_played_at"] else None,
+            "trophies_earned": game["trophies_earned"], "trophies_defined": game["trophies_defined"],
+            "completion_percent": completion,
+        })
+    top_games.sort(key=lambda x: (x["playtime_minutes"], x["play_count"], x["title"]), reverse=True)
+
+    game_platform_stats = [
+        {"platform": platform, "games": len(values["games"]),
+         "playtime_minutes": values["playtime_minutes"], "play_count": values["play_count"]}
+        for platform, values in game_platforms.items()
+    ]
+    game_platform_stats.sort(key=lambda x: (x["playtime_minutes"], x["games"]), reverse=True)
+
+    game_stats = {
+        "total_games": len(game_by_id), "total_playtime_minutes": total_game_playtime,
+        "total_play_count": total_game_plays, "achievements_earned": total_game_achievements,
+        "achievements_defined": total_game_achievements_defined,
+        "completion_percent": round(total_game_achievements / total_game_achievements_defined * 100, 1) if total_game_achievements_defined else None,
+        "first_played_at": game_first_played.isoformat() if game_first_played else None,
+        "last_played_at": game_last_played.isoformat() if game_last_played else None,
+        "platforms": game_platform_stats, "top_games": top_games[:12], "all_time": True,
+    }
+
     return {
         # Watching
         "granularity": "day" if use_daily else "month",
@@ -1558,4 +1659,5 @@ async def get_user_stats(
         "top_movies": top_movies,
         "top_networks": top_networks,
         "top_people": top_people,
+        "games": game_stats,
     }
