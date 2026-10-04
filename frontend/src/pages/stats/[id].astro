@@ -302,6 +302,7 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
     }
 
     // Personal insights and recap
+    const isDaily = data.granularity === 'day';
     const insights = document.getElementById('insights-strip');
     const recapGrid = document.getElementById('recap-grid');
     const recapTitle = document.getElementById('recap-title');
@@ -356,7 +357,6 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
     }
 
     // Activity chart
-    const isDaily = data.granularity === 'day';
     const activityChart = document.getElementById('activity-chart');
     if (activityChart) {
       let activityData = since && until
