@@ -100,7 +100,7 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
             <div class="kpi-card"><div id="game-achievements" class="kpi-value">0%</div><div class="kpi-label">Achievement completion</div></div>
           </div>
           <div class="game-stats-grid">
-            <div class="panel"><h3>Platforms</h3><div id="game-platforms" class="metric-stack"></div></div>
+            <div><h3 class="game-subheading">Platforms</h3><div id="game-platforms" class="platform-kpi-grid"></div></div>
             <div class="panel poster-panel"><h3>Most played games</h3><div id="top-games" class="poster-grid"></div></div>
           </div>
           <div class="panel mt-4"><h3>Recent play activity</h3><div id="game-history" class="game-history"></div></div>
@@ -132,7 +132,7 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
 </Base>
 
 <style>
-.game-history{display:grid;gap:.45rem}.game-history-row{display:flex;align-items:center;gap:.8rem;padding:.65rem .75rem;border:1px solid rgba(63,63,70,.5);background:rgba(39,39,42,.3);border-radius:.8rem}.game-history-cover{width:34px;height:46px;flex:none;overflow:hidden;border-radius:.4rem;background:#27272a}.game-history-cover img{width:100%;height:100%;object-fit:cover}.game-stats-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:1.25rem}.game-stats-grid .panel{min-width:0}@media(max-width:900px){.game-stats-grid{grid-template-columns:1fr}}
+.game-history{display:grid;gap:.45rem}.game-history-row{display:flex;align-items:center;gap:.8rem;padding:.65rem .75rem;border:1px solid rgba(63,63,70,.5);background:rgba(39,39,42,.3);border-radius:.8rem}.game-history-cover{width:34px;height:46px;flex:none;overflow:hidden;border-radius:.4rem;background:#27272a}.game-history-cover img{width:100%;height:100%;object-fit:cover}.game-stats-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:1.25rem}.platform-kpi-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem}.platform-kpi-card{min-height:128px;padding:1rem;text-align:center;align-items:center}.platform-icon-wrap{height:32px;display:flex;align-items:center;justify-content:center;margin-bottom:.45rem;color:#a1a1aa}.platform-logo{width:42px;height:32px}.platform-emoji{font-size:1.8rem;line-height:1}.game-subheading{font-size:.68rem;font-weight:900;letter-spacing:.14em;text-transform:uppercase;color:#a1a1aa;margin:0 0 1rem}.platform-kpi-card .kpi-value{font-size:2rem;font-weight:950;letter-spacing:-.04em;color:#f4f4f5}.platform-kpi-card .kpi-label{font-size:.65rem;font-weight:900;letter-spacing:.1em;text-transform:uppercase;color:#71717a}.platform-kpi-card .kpi-label{white-space:nowrap}.game-stats-grid .panel{min-width:0}@media(max-width:900px){.game-stats-grid{grid-template-columns:1fr}}
 .stats-page{--border:rgba(63,63,70,.72);--muted:#71717a;--panel:rgba(18,18,21,.78);--panel2:rgba(24,24,27,.88)}
 .stats-page .stats-hero{padding:1.25rem 0 0}.back-link{font-size:.7rem;font-weight:800;color:#71717a;text-transform:uppercase;letter-spacing:.12em}.back-link:hover{color:#d4d4d8}
 .stats-page .eyebrow{font-size:.65rem;font-weight:900;letter-spacing:.18em;text-transform:uppercase;color:#38bdf8}.hero-copy{color:#71717a;font-size:.9rem;margin-top:.55rem}
@@ -148,7 +148,7 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
 .genre-columns{display:grid;grid-template-columns:1fr 1fr;gap:1rem}.poster-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.8rem}.chip-grid{display:flex;flex-wrap:wrap;gap:.45rem}.pie-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;align-items:center}
 .skeleton{background:linear-gradient(90deg,rgba(39,39,42,.5),rgba(63,63,70,.5),rgba(39,39,42,.5));border-radius:.7rem;animation:pulse 1.5s infinite}@keyframes pulse{50%{opacity:.45}}
 .stats-page #stats-content{transition:opacity .15s ease}.stats-page img{background:#27272a}
-@media(max-width:900px){.kpi-grid{grid-template-columns:repeat(2,1fr)}.feature-grid,.taste-grid,.top-grid,.collection-grid{grid-template-columns:1fr}.poster-grid{grid-template-columns:repeat(4,1fr)}}
+@media(max-width:900px){.kpi-grid{grid-template-columns:repeat(2,1fr)}.platform-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.feature-grid,.taste-grid,.top-grid,.collection-grid{grid-template-columns:1fr}.poster-grid{grid-template-columns:repeat(4,1fr)}}
 @media(max-width:560px){.stats-page{padding-left:1rem;padding-right:1rem}.kpi-card{min-height:100px;padding:1rem}.kpi-card p:first-child{font-size:1.55rem!important}.period-control{width:100%}.poster-grid{grid-template-columns:repeat(3,1fr)}.genre-columns{grid-template-columns:1fr}.pie-grid{gap:.4rem}}
 </style>
 <script define:vars={{ userId: id, token, isOwnStats }}>
@@ -706,9 +706,16 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
     set('game-plays', Number(games.recorded_activity_count || 0).toLocaleString());
     set('game-achievements', games.completion_percent == null ? '—' : games.completion_percent + '%');
     const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+    const platformIcon = (platform) => {
+      if (platform === 'PlayStation') return '<svg viewBox="0 0 64 48" aria-label="PlayStation" class="platform-logo"><path fill="currentColor" d="M25 4v30.2c0 4.2 2.1 6.4 6.1 7.4V14.2c0-3.7 1.6-5.7 4.3-5.7 3.5 0 5.6 2.4 5.6 6.7v9.2l7.1-2.5v-9.1c0-8-4.6-12.8-12.5-12.8C30.4 0 27 1.5 25 4Z"/><path fill="currentColor" d="M47.4 25.1c-1.7 0-3.1.3-4.8.9l-5.8 2.1 5.1 1.7 4.6-1.6c1.8-.6 3.3-.8 4.6-.2 1.1.5 1.8 1.4 1.8 2.5 0 1.7-1.2 2.8-3.6 3.6l-8.9 3v4.2l10.2-3.4c5.4-1.8 8-4.7 8-8.6 0-2.8-1.4-5-4-6.2-2-.9-4.4-1-7.2 0ZM8.5 25.8c-3.4 1.1-5.4 3.1-5.4 5.7 0 2.7 2 4.5 5.9 5.5 3.1.8 6.9.9 10.8.5v-4.2c-2.9.2-5.4.1-7.4-.4-1.6-.4-2.4-1-2.4-1.8 0-.7.7-1.3 2.1-1.8l5.2-1.8-5-1.7-3.8 1.3Z"/></svg>';
+      if (platform === 'Xbox') return '<svg viewBox="0 0 64 64" aria-label="Xbox" class="platform-logo"><path fill="currentColor" d="M32 4C16.5 4 4 16.5 4 32s12.5 28 28 28 28-12.5 28-28S47.5 4 32 4Zm16.7 39.7C44 51.1 38 55 32 55s-12-3.9-16.7-11.3c-2.7-4.2-4.3-9.3-4.3-14.5 0-2.1.3-4.1.8-6 6.7 1.2 15.8 10.7 20.2 18.2 4.4-7.5 13.5-17 20.2-18.2.5 1.9.8 3.9.8 6 0 5.2-1.6 10.3-4.3 14.5ZM32 8.9c-4.1 0-8 1.1-11.3 3.1 3.4-.7 7.8 1.5 11.3 5.2 3.5-3.7 7.9-5.9 11.3-5.2A22.9 22.9 0 0 0 32 8.9Z"/></svg>';
+      if (platform === 'PC') return '<span class="platform-emoji" aria-label="PC">🖥️</span>';
+      if (platform === 'Nintendo') return '<span class="platform-emoji" aria-label="Nintendo">🎮</span>';
+      return '<span class="platform-emoji" aria-label="Other">🎮</span>';
+    };
     const platforms = document.getElementById('game-platforms');
     if (platforms) platforms.innerHTML = (games.platforms || []).map(p =>
-      '<div class="flex items-center gap-3 py-2 border-b border-zinc-800 last:border-0"><span class="font-bold text-zinc-200 flex-1">' + esc(p.platform) + '</span><span class="text-xs text-zinc-500">' + p.games + ' games</span><span class="text-xs font-bold text-zinc-300">' + fmtGameTime(p.playtime_minutes) + '</span></div>'
+      '<div class="kpi-card platform-kpi-card"><div class="platform-icon-wrap">' + platformIcon(p.platform) + '</div><div class="kpi-value">' + Number(p.games).toLocaleString() + '</div><div class="kpi-label">' + esc(p.platform) + ' · ' + fmtGameTime(p.playtime_minutes) + '</div></div>'
     ).join('');
     const history = document.getElementById('game-history');
     if (history) history.innerHTML = (games.play_history || []).slice(0, 20).map(a =>
