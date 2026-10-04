@@ -22,3 +22,10 @@ def test_parse_steam_xml_removes_invalid_control_characters():
         '<?xml version="1.0"?><games><game><name>Game\x0bName</name></game></games>'
     )
     assert root.findtext("./game/name") == "GameName"
+
+
+def test_parse_steam_xml_removes_utf8_bom():
+    root = _parse_steam_xml(
+        '\\ufeff<?xml version="1.0"?><games><game><name>Steam Game</name></game></games>'
+    )
+    assert root.findtext("./game/name") == "Steam Game"
