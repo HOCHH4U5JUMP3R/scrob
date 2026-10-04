@@ -29,3 +29,11 @@ def test_parse_steam_xml_removes_utf8_bom():
         '\\ufeff<?xml version="1.0"?><games><game><name>Steam Game</name></game></games>'
     )
     assert root.findtext("./game/name") == "Steam Game"
+
+
+
+def test_parse_steam_xml_repairs_literal_angle_bracket_in_text():
+    root = _parse_steam_xml(
+        '<?xml version="1.0"?><games><game><name>Game < 3</name></game></games>'
+    )
+    assert root.findtext("./game/name") == "Game < 3"
