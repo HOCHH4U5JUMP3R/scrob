@@ -91,6 +91,20 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
           </div>
         </section>
 
+        <section id="game-stats" class="section-block" style="display:none">
+          <div class="section-title"><div><p class="eyebrow">Gaming</p><h2>Game statistics</h2></div><span class="panel-badge">All platforms</span></div>
+          <div class="kpi-grid mb-6">
+            <div class="kpi-card"><div id="game-count" class="kpi-value">0</div><div class="kpi-label">Games played</div></div>
+            <div class="kpi-card"><div id="game-time" class="kpi-value">0h</div><div class="kpi-label">Play time</div></div>
+            <div class="kpi-card"><div id="game-plays" class="kpi-value">0</div><div class="kpi-label">Play sessions</div></div>
+            <div class="kpi-card"><div id="game-achievements" class="kpi-value">0%</div><div class="kpi-label">Achievement completion</div></div>
+          </div>
+          <div class="game-stats-grid">
+            <div class="panel"><h3>Platforms</h3><div id="game-platforms" class="metric-stack"></div></div>
+            <div class="panel poster-panel"><h3>Most played games</h3><div id="top-games" class="poster-grid"></div></div>
+          </div>
+        </section>
+
         <section id="top-stats" class="section-block" style="display:none">
           <div class="section-title"><div><p class="eyebrow">Your favourites</p><h2>Most watched</h2></div></div>
           <div class="top-grid">
@@ -117,6 +131,7 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
 </Base>
 
 <style>
+.game-stats-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:1.25rem}.game-stats-grid .panel{min-width:0}@media(max-width:900px){.game-stats-grid{grid-template-columns:1fr}}
 .stats-page{--border:rgba(63,63,70,.72);--muted:#71717a;--panel:rgba(18,18,21,.78);--panel2:rgba(24,24,27,.88)}
 .stats-page .stats-hero{padding:1.25rem 0 0}.back-link{font-size:.7rem;font-weight:800;color:#71717a;text-transform:uppercase;letter-spacing:.12em}.back-link:hover{color:#d4d4d8}
 .stats-page .eyebrow{font-size:.65rem;font-weight:900;letter-spacing:.18em;text-transform:uppercase;color:#38bdf8}.hero-copy{color:#71717a;font-size:.9rem;margin-top:.55rem}
@@ -675,6 +690,33 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
     section.style.display = any ? '' : 'none';
   }
 
+  function fmtGameTime(minutes) {
+    const m = Number(minutes || 0), h = Math.floor(m / 60), r = m % 60;
+    return h ? (r ? h + 'h ' + r + 'm' : h + 'h') : r + 'm';
+  }
+
+  function renderGameStats(games) {
+    const section = document.getElementById('game-stats');
+    if (!section || !games || !games.total_games) return;
+    section.style.display = '';
+    const set = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
+    set('game-count', Number(games.total_games).toLocaleString());
+    set('game-time', fmtGameTime(games.total_playtime_minutes));
+    set('game-plays', Number(games.total_play_count || 0).toLocaleString());
+    set('game-achievements', games.completion_percent == null ? '—' : games.completion_percent + '%');
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+    const platforms = document.getElementById('game-platforms');
+    if (platforms) platforms.innerHTML = (games.platforms || []).map(p =>
+      '<div class="flex items-center gap-3 py-2 border-b border-zinc-800 last:border-0"><span class="font-bold text-zinc-200 flex-1">' + esc(p.platform) + '</span><span class="text-xs text-zinc-500">' + p.games + ' games</span><span class="text-xs font-bold text-zinc-300">' + fmtGameTime(p.playtime_minutes) + '</span></div>'
+    ).join('');
+    const cards = document.getElementById('top-games');
+    if (cards) cards.innerHTML = (games.top_games || []).map(g =>
+      '<a href="/game/' + g.id + '" class="group block min-w-0"><div class="aspect-[2/3] rounded-xl overflow-hidden bg-zinc-800 border border-zinc-800 group-hover:border-zinc-600 transition">' +
+      (g.cover_path ? '<img src="' + esc(g.cover_path) + '" alt="' + esc(g.title) + '" loading="lazy" class="w-full h-full object-cover group-hover:scale-105 transition-transform">' : '<div class="w-full h-full flex items-center justify-center p-3 text-xs text-center text-zinc-500">' + esc(g.title) + '</div>') +
+      '</div><div class="text-xs text-zinc-300 font-semibold mt-1.5 truncate">' + esc(g.title) + '</div><div class="text-[11px] text-zinc-500">' + fmtGameTime(g.playtime_minutes) + ' · ' + Number(g.play_count || 0).toLocaleString() + ' plays' + (g.completion_percent != null ? ' · ' + g.completion_percent + '%' : '') + '</div></a>'
+    ).join('');
+  }
+
   // ── Fetch ──────────────────────────────────────────────────────────────────
   async function loadStats(since, until) {
     setLoading(true);
@@ -687,7 +729,9 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) { setLoading(false); return; }
-      renderStats(await res.json(), since, until);
+      const data = await res.json();
+      renderStats(data, since, until);
+      renderGameStats(data.games);
     } catch { /* silent */ }
     setLoading(false);
   }
