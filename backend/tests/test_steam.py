@@ -66,5 +66,21 @@ def test_parse_steam_games_html_extracts_embedded_library():
     ]
 
 
+def test_parse_steam_games_html_extracts_panorama_library():
+    html = '''
+    <script>
+    var g_rgGameData = {"123":{"appid":123,"name":"Test Game","playtime_forever":150,"last_played":1700000000}};
+    </script>
+    '''
+    assert _parse_steam_games_html(html) == [
+        {
+            "appid": "123",
+            "name": "Test Game",
+            "playtime_forever": 150,
+            "rtime_last_played": 1700000000,
+        }
+    ]
+
+
 def test_parse_steam_games_html_returns_empty_without_game_data():
     assert _parse_steam_games_html("<html><body>No game data</body></html>") == []
