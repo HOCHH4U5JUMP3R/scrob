@@ -37,3 +37,14 @@ def test_parse_steam_xml_repairs_literal_angle_bracket_in_text():
         '<?xml version="1.0"?><games><game><name>Game < 3</name></game></games>'
     )
     assert root.findtext("./game/name") == "Game < 3"
+
+
+def test_parse_steam_xml_recovers_from_mismatched_tags():
+    root = _parse_steam_xml(
+        '<?xml version="1.0"?><games><game><appID>123</appID>'
+        '<name>Broken Game</wrong><hoursOnRecord>1.5</hoursOnRecord>'
+        '</game></games>'
+    )
+    assert root.findtext("./games/game/appID") == "123"
+    assert root.findtext("./games/game/name") == "Broken Game"
+    assert root.findtext("./games/game/hoursOnRecord") == "1.5"
