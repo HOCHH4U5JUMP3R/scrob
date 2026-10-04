@@ -5,6 +5,7 @@ from sqlalchemy.orm import selectinload
 
 from db import get_db
 from dependencies import get_current_user_or_api_key
+from models.game_play_activity import GamePlayActivity
 from models.games import Game, GameUserStats
 from models.users import User
 
@@ -101,4 +102,29 @@ async def get_game(
     game = result.scalar_one_or_none()
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
-    return _game(game, current_user.id)
+
+    payload = _game(game, current_user.id)
+    activity_result = await db.execute(
+        select(GamePlayActivity)
+        .where(
+            GamePlayActivity.game_id == game_id,
+            GamePlayActivity.user_id == current_user.id,
+        )
+        .order_by(GamePlayActivity.played_at.desc(), GamePlayActivity.id.desc())
+        .limit(50)
+    )
+    payload["play_history"] = [
+        {
+            "id": activity.id,
+            "game_id": activity.game_id,
+            "platform": activity.platform,
+            "played_at": activity.played_at.isoformat() if activity.played_at else None,
+            "duration_minutes": activity.duration_minutes,
+            "playtime_before_minutes": activity.playtime_before_minutes,
+            "playtime_after_minutes": activity.playtime_after_minutes,
+            "observed_at": activity.observed_at.isoformat() if activity.observed_at else None,
+            "source": activity.source,
+        }
+        for activity in activity_result.scalars().all()
+    ]
+    return payload
