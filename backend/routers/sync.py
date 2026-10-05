@@ -2008,6 +2008,7 @@ async def sync_items(
     # All relevant media, keyed for O(1) lookup
     media_by_episode: dict[tuple, Media] = {}   # (show_id, season, ep) → Media
     media_by_tvdb_episode_id: dict[tuple[int, int], Media] = {}  # (show_id, TVDB episode id) → Media
+    media_by_tvdb_episode_position: dict[tuple[int, int, int], Media] = {}  # (show_id, TVDB season, episode) → Media
     media_by_tmdb: dict[tuple, Media] = {}       # (tmdb_id, media_type) → Media
 
     if media_type == MediaType.episode:
@@ -2060,6 +2061,7 @@ async def sync_items(
                     )
                     if media is not None:
                         media_by_tvdb_episode_id[(show_id, mapping.tvdb_id)] = media
+                        media_by_tvdb_episode_position[(show_id, mapping.tvdb_season_number, mapping.tvdb_episode_number)] = media
 
                 # Older Scrob rows may already carry the TVDB episode id in
                 # tmdb_data even when EpisodeOrderMapping has not been built
@@ -2228,6 +2230,8 @@ async def sync_items(
                         tvdb_id = None
                     if tvdb_id is not None:
                         canonical_media_for_item = media_by_tvdb_episode_id.get((show_id, tvdb_id))
+                    if canonical_media_for_item is None and season_num is not None and episode_num is not None:
+                        canonical_media_for_item = media_by_tvdb_episode_position.get((show_id, season_num, episode_num))
 
                 file_entry = existing_files.get((source_id, episode_num))
                 media_id_for_watch: int | None = None
@@ -2404,6 +2408,8 @@ async def sync_items(
                             if tvdb_id is not None
                             else None
                         )
+                        if canonical_media is None and season_num is not None and episode_num is not None:
+                            canonical_media = media_by_tvdb_episode_position.get((show_id, season_num, episode_num))
                         if canonical_media is not None:
                             media = canonical_media
                             season_num = canonical_media.season_number
