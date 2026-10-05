@@ -86,6 +86,32 @@ async def get_mapping_by_tvdb_position(
     return result.scalar_one_or_none()
 
 
+async def load_tvdb_episode_id_positions(
+    db: AsyncSession,
+    series_tmdb_ids: list[int],
+    tvdb_episode_ids: list[int],
+) -> dict[tuple[int, int], tuple[int, int]]:
+    """Map Jellyfin/Emby's TVDB episode id to Scrob's canonical TMDB position."""
+    if not series_tmdb_ids or not tvdb_episode_ids:
+        return {}
+    out: dict[tuple[int, int], tuple[int, int]] = {}
+    for i in range(0, len(tvdb_episode_ids), 10_000):
+        chunk = tvdb_episode_ids[i : i + 10_000]
+        rows = (await db.execute(
+            select(EpisodeOrderMapping).where(
+                EpisodeOrderMapping.series_tmdb_id.in_(series_tmdb_ids),
+                EpisodeOrderMapping.tvdb_id.in_(chunk),
+                (EpisodeOrderMapping.tmdb_season_number != EpisodeOrderMapping.tvdb_season_number)
+                | (EpisodeOrderMapping.tmdb_episode_number != EpisodeOrderMapping.tvdb_episode_number),
+            )
+        )).scalars().all()
+        for mapping in rows:
+            out[(mapping.series_tmdb_id, mapping.tvdb_id)] = (
+                mapping.tmdb_season_number,
+                mapping.tmdb_episode_number,
+            )
+    return out
+
 async def get_episode_orders_for_series(
     db: AsyncSession,
     user_id: int,
