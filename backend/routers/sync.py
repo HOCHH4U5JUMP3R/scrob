@@ -29,6 +29,7 @@ from dateutil import parser
 from models.base import MediaType, CollectionSource
 from models.global_settings import GlobalSettings
 from core import arvio, jellyfin, emby, plex, nuvio, stremio, tmdb
+from core.episode_order import load_tvdb_episode_id_positions
 from core.jellyfin import get_jellyfin_tmdb_id, get_jellyfin_tvdb_id
 import core.trakt as trakt_client
 from core.enrichment import enrich_media, is_unmapped_tvdb_episode, create_media_safely, enrich_media_safely, apply_media_change_safely, enrich_episode_from_tvdb
@@ -2007,6 +2008,7 @@ async def sync_items(
 
     # All relevant media, keyed for O(1) lookup
     media_by_episode: dict[tuple, Media] = {}   # (show_id, season, ep) → Media
+    tvdb_positions: dict[tuple[int, int], tuple[int, int]] = {}
     media_by_tvdb_episode_id: dict[tuple[int, int], Media] = {}  # (show_id, TVDB episode id) → Media
     media_by_tvdb_episode_position: dict[tuple[int, int, int], Media] = {}  # (show_id, TVDB season, episode) → Media
     media_by_tmdb: dict[tuple, Media] = {}       # (tmdb_id, media_type) → Media
@@ -2120,6 +2122,15 @@ async def sync_items(
             for m in medias:
                 media_by_tmdb[(m.tmdb_id, m.media_type)] = m
 
+    if media_type == MediaType.episode and source in _MEDIA_BROWSER_ITEM_SOURCES and show_ids:
+        series_ids = sorted({t for t in show_id_to_tmdb.values() if t})
+        item_tvdb_ids = sorted({
+            tid for item in items
+            if item.get("IndexNumberEnd") is None
+            and (tid := get_jellyfin_tvdb_id(item.get("ProviderIds") or {}))
+        })
+        tvdb_positions = await load_tvdb_episode_id_positions(db, series_ids, item_tvdb_ids)
+
     # Reverse lookup: media.id → Media object (for healing unenriched items in skipped branch)
     media_by_id: dict[int, Media] = {m.id: m for _, _, m in files_rows}
     for m in list(media_by_episode.values()) + list(media_by_tmdb.values()):
@@ -2194,6 +2205,12 @@ async def sync_items(
                     name = item.get("Name")
                     season_num = item.get("ParentIndexNumber")
                     episode_num = item.get("IndexNumber")
+                    if tvdb_positions:
+                        series_tmdb_id = show_id_to_tmdb.get(show_map.get(str(parent_id)))
+                        tvdb_id = get_jellyfin_tvdb_id(item.get("ProviderIds") or {})
+                        canonical_pos = tvdb_positions.get((series_tmdb_id, tvdb_id)) if series_tmdb_id and tvdb_id else None
+                        if canonical_pos:
+                            season_num, episode_num = canonical_pos
                 else:  # Plex
                     source_id = str(item.get("ratingKey"))
                     quality = plex.extract_quality(item.get("Media", []))
