@@ -604,9 +604,27 @@ async def _merge_episode_media(db: AsyncSession, canonical: Media, divergent: Me
     """Moves every reference to `divergent` onto `canonical`, deduplicating
     against rows canonical already has where a table's uniqueness would
     otherwise be violated, then deletes the now-empty divergent row."""
-    # WatchEvent: no uniqueness on media_id - every play is real and distinct,
-    # re-point them all directly.
-    await db.execute(update(WatchEvent).where(WatchEvent.media_id == divergent.id).values(media_id=canonical.id))
+    # WatchEvent is intentionally not unique on media_id because genuine
+    # rewatches are separate plays.  During TVDB/TMDB reconciliation, however,
+    # a divergent row is an alternate identity of the *same* episode.  If the
+    # canonical row already has completed history, the divergent history is the
+    # duplicate created while that alternate identity was being tracked and must
+    # not inflate plays/watch statistics.  If the canonical row has no history,
+    # preserve the divergent history by moving it across.
+    canonical_watch_q = await db.execute(
+        select(WatchEvent.id).where(
+            WatchEvent.media_id == canonical.id,
+            WatchEvent.completed == True,
+        ).limit(1)
+    )
+    if canonical_watch_q.scalar_one_or_none() is not None:
+        await db.execute(delete(WatchEvent).where(WatchEvent.media_id == divergent.id))
+    else:
+        await db.execute(
+            update(WatchEvent)
+            .where(WatchEvent.media_id == divergent.id)
+            .values(media_id=canonical.id)
+        )
 
     # RewatchProgress: unique per (rewatch_id, media_id) - move rows that
     # don't collide, drop the rest (canonical's own progress for that
