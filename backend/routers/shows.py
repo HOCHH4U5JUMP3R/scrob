@@ -825,6 +825,56 @@ async def get_show(
             coll_per_season[sn] = collected
             watched_per_season[sn] = watched
 
+        if selected_episode_order == "tvdb":
+            # Media rows remain in canonical TMDB positions. Re-group their
+            # actual identities through the TVDB mapping for the show state.
+            tvdb_stats_q = (
+                select(
+                    EpisodeOrderMapping.tvdb_season_number,
+                    func.count(func.distinct(
+                        case((coll_a.id.isnot(None), Media.id), else_=None)
+                    )).label("collected"),
+                    func.count(func.distinct(watched_case)).label("watched"),
+                )
+                .join(
+                    Media,
+                    and_(
+                        Media.show_id == show.id,
+                        Media.media_type == MediaType.episode,
+                        Media.season_number == EpisodeOrderMapping.tmdb_season_number,
+                        Media.episode_number == EpisodeOrderMapping.tmdb_episode_number,
+                    ),
+                )
+                .outerjoin(
+                    coll_a,
+                    and_(coll_a.media_id == Media.id, coll_a.user_id == effective_user_id),
+                )
+            )
+            if active_rewatch:
+                tvdb_stats_q = tvdb_stats_q.outerjoin(
+                    RewatchProgress,
+                    and_(
+                        RewatchProgress.media_id == Media.id,
+                        RewatchProgress.rewatch_id == active_rewatch.id,
+                    ),
+                )
+            else:
+                tvdb_stats_q = tvdb_stats_q.outerjoin(
+                    watch_a,
+                    and_(watch_a.media_id == Media.id, watch_a.user_id == effective_user_id),
+                )
+            tvdb_stats_q = await db.execute(
+                tvdb_stats_q.where(
+                    EpisodeOrderMapping.series_tmdb_id == series_tmdb_id,
+                    EpisodeOrderMapping.tvdb_season_number.isnot(None),
+                ).group_by(EpisodeOrderMapping.tvdb_season_number)
+            )
+            coll_per_season = {}
+            watched_per_season = {}
+            for sn, collected, watched in tvdb_stats_q.all():
+                coll_per_season[sn] = collected
+                watched_per_season[sn] = watched
+
         # Season user ratings (stored against the show's Media row with season_number)
         show_media_q = await db.execute(
             select(Media).where(Media.tmdb_id == series_tmdb_id, Media.media_type == MediaType.series)
@@ -866,6 +916,19 @@ async def get_show(
         # Episode counts per season from stored TMDB metadata, capped at the
         # last aired episode for shows still airing.
         season_ep_counts = capped_season_episode_counts(show, tmdb_extra)
+        if selected_episode_order == "tvdb":
+            tvdb_count_q = await db.execute(
+                select(
+                    EpisodeOrderMapping.tvdb_season_number,
+                    func.count(EpisodeOrderMapping.id),
+                )
+                .where(
+                    EpisodeOrderMapping.series_tmdb_id == series_tmdb_id,
+                    EpisodeOrderMapping.tvdb_season_number.isnot(None),
+                )
+                .group_by(EpisodeOrderMapping.tvdb_season_number)
+            )
+            season_ep_counts = {sn: count for sn, count in tvdb_count_q.all()}
 
         # Build season states for all known seasons
         for sn in set(list(coll_per_season.keys()) + list(season_ep_counts.keys())):
@@ -1439,7 +1502,9 @@ async def get_show_season(
 
             # Season-level stats: watched, in_library, collection_pct, user_rating
             collected_in_season = 0
-            if show:
+            if selected_episode_order == "tvdb" and local_media_ids:
+                collected_in_season = len(collected_media_ids)
+            elif show:
                 # Count collected episodes in this season.
                 # Primary path: match by show_id.
                 coll_q = await db.execute(
