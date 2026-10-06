@@ -30,6 +30,7 @@ from core import tvdb as tvdb_client
 from core.episode_order import (
     ensure_episode_order_mapping,
     get_episode_order,
+    get_mappings_for_tvdb_season,
     reconcile_divergent_episode_media,
     validate_episode_order,
 )
@@ -1161,16 +1162,26 @@ async def get_show_season(
     )
     show = show_result.scalar_one_or_none()
 
+    order_preference = await get_episode_order(db, effective_user_id, series_tmdb_id)
+    selected_episode_order = order_preference.episode_order if order_preference else "tmdb"
+    tvdb_season_mappings = (
+        await get_mappings_for_tvdb_season(db, series_tmdb_id, season_number)
+        if selected_episode_order == "tvdb"
+        else []
+    )
+
     local_episodes = []
     if show:
-        ep_result = await db.execute(
+        ep_query = (
             select(Media)
             .where(Media.media_type == MediaType.episode)
             .where(Media.show_id == show.id)
-            .where(Media.season_number == season_number)
-            .order_by(Media.episode_number.asc())
         )
-        local_episodes = ep_result.scalars().all()
+        if selected_episode_order != "tvdb":
+            ep_query = ep_query.where(Media.season_number == season_number)
+        local_episodes = (
+            await db.execute(ep_query.order_by(Media.season_number.asc(), Media.episode_number.asc()))
+        ).scalars().all()
 
     # 2. Always fetch full season data from TMDB for consistent metadata
     api_key = await get_user_tmdb_key(db, effective_user_id)
@@ -1201,8 +1212,42 @@ async def get_show_season(
                 )
                 show_info = format_show(show)
 
-            # Bulk fetch watched state and ratings for episodes in this season
-            tmdb_episodes = tmdb_data.get("episodes", [])
+            # In TVDB mode the requested season is a TVDB season. Build
+            # it from the canonical TMDB episode positions so watched and
+            # collection state use the same Media identity as Jellyfin sync.
+            if selected_episode_order == "tvdb" and tvdb_season_mappings:
+                canonical_seasons = sorted({
+                    m.tmdb_season_number for m in tvdb_season_mappings
+                    if m.tmdb_season_number is not None
+                })
+                season_payloads = {}
+                for canonical_season in canonical_seasons:
+                    if canonical_season == season_number:
+                        season_payloads[canonical_season] = tmdb_data
+                    else:
+                        season_payloads[canonical_season] = await tmdb.get_season(
+                            series_tmdb_id, canonical_season,
+                            api_key=api_key, language=metadata_lang,
+                        )
+                tmdb_by_position = {
+                    (canonical_season, ep.get("episode_number")): ep
+                    for canonical_season, payload in season_payloads.items()
+                    for ep in payload.get("episodes", [])
+                }
+                tmdb_episodes = []
+                for mapping in tvdb_season_mappings:
+                    ep = tmdb_by_position.get(
+                        (mapping.tmdb_season_number, mapping.tmdb_episode_number)
+                    )
+                    if ep is None:
+                        continue
+                    display_ep = dict(ep)
+                    display_ep["episode_number"] = mapping.tvdb_episode_number
+                    display_ep["season_number"] = mapping.tvdb_season_number
+                    tmdb_episodes.append(display_ep)
+            else:
+                tmdb_episodes = tmdb_data.get("episodes", [])
+
             total_in_season = len(tmdb_episodes)
             today_str = date.today().isoformat()
             total_aired_in_season = sum(
@@ -1278,8 +1323,26 @@ async def get_show_season(
                     for ep_tmdb_id, list_id in ep_lists_q.all():
                         episode_in_lists.setdefault(ep_tmdb_id, []).append(list_id)
 
-            # Merge local library status
+            # Merge local library status. TVDB-ordered episodes use the
+            # canonical TMDB episode id rather than the displayed TVDB position.
             local_map = {ep.episode_number: ep for ep in local_episodes}
+            tvdb_media_by_display_ep = {}
+            if selected_episode_order == "tvdb":
+                tvdb_media_by_display_ep = {
+                    mapping.tvdb_episode_number: local_media_by_tmdb.get(mapping.tmdb_episode_id)
+                    for mapping in tvdb_season_mappings
+                    if mapping.tvdb_episode_number is not None
+                }
+
+            collected_media_ids: set[int] = set()
+            if selected_episode_order == "tvdb" and local_media_ids:
+                collected_q = await db.execute(
+                    select(Collection.media_id).where(
+                        Collection.user_id == effective_user_id,
+                        Collection.media_id.in_(local_media_ids),
+                    ).distinct()
+                )
+                collected_media_ids = {r[0] for r in collected_q.all()}
 
             # Subquery to check which (season, episode) pairs are in the user collection.
             # Primary path: match by show_id. The outerjoin also catches rows where show_id
@@ -1322,7 +1385,16 @@ async def get_show_season(
                 local_ep = local_map.get(ep_num)
                 local_media_id = local_ep.id if local_ep else None
                 
-                is_in_library = (season_number, ep_num) in user_collected_eps
+                if selected_episode_order == "tvdb":
+                    mapped_media = tvdb_media_by_display_ep.get(ep_num)
+                    local_media_id = mapped_media.id if mapped_media else None
+                    is_in_library = local_media_id in collected_media_ids if local_media_id else False
+                    is_watched = local_media_id in watched_ep_ids if local_media_id else False
+                    rating = episode_ratings.get(local_media_id) if local_media_id else None
+                else:
+                    is_in_library = (season_number, ep_num) in user_collected_eps
+                    is_watched = local_media_id in watched_ep_ids if local_media_id else False
+                    rating = episode_ratings.get(local_media_id) if local_media_id else None
 
                 episodes.append(
                     {
@@ -1340,8 +1412,8 @@ async def get_show_season(
                         "tmdb_rating": ep.get("vote_average"),
                         "in_library": is_in_library,
                         "runtime": ep.get("runtime"),
-                        "watched": local_media_id in watched_ep_ids if local_media_id else False,
-                        "user_rating": episode_ratings.get(local_media_id) if local_media_id else None,
+                        "watched": is_watched,
+                        "user_rating": rating,
                         "in_lists": episode_in_lists.get(ep.get("id"), []),
                     }
                 )
