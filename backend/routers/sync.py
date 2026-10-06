@@ -29,7 +29,7 @@ from dateutil import parser
 from models.base import MediaType, CollectionSource
 from models.global_settings import GlobalSettings
 from core import arvio, jellyfin, emby, plex, nuvio, stremio, tmdb
-from core.episode_order import load_tvdb_episode_id_positions
+from core.episode_order import load_tvdb_episode_id_positions, reconcile_divergent_episode_media
 from core.jellyfin import get_jellyfin_tmdb_id, get_jellyfin_tvdb_id
 import core.trakt as trakt_client
 from core.enrichment import enrich_media, is_unmapped_tvdb_episode, create_media_safely, enrich_media_safely, apply_media_change_safely, enrich_episode_from_tvdb
@@ -2130,6 +2130,26 @@ async def sync_items(
             and (tid := get_jellyfin_tvdb_id(item.get("ProviderIds") or {}))
         })
         tvdb_positions = await load_tvdb_episode_id_positions(db, series_ids, item_tvdb_ids)
+
+        # TVDB/TMDB alternate ordering can leave an older Jellyfin-created Media
+        # row at the TVDB-native position while the canonical TMDB row already
+        # exists. Merge that stale row before the watch-event dedupe runs; otherwise
+        # the same real episode can retain history once as TMDB S01E25 and once as
+        # TVDB S02E13, which inflates play/watch statistics.
+        if tvdb_positions:
+            tvdb_series_ids = {
+                show_id_to_tmdb.get(show_id): show_id
+                for show_id in show_ids
+                if show_id_to_tmdb.get(show_id)
+            }
+            if tvdb_series_ids:
+                shows_result = await db.execute(
+                    select(Show).where(Show.id.in_(list(tvdb_series_ids.values())))
+                )
+                for show in shows_result.scalars().all():
+                    if show.tmdb_id in tvdb_series_ids:
+                        await reconcile_divergent_episode_media(db, show)
+                await db.flush()
 
     # Reverse lookup: media.id → Media object (for healing unenriched items in skipped branch)
     media_by_id: dict[int, Media] = {m.id: m for _, _, m in files_rows}
