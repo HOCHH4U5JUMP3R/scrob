@@ -563,16 +563,28 @@ async def reconcile_divergent_episode_media(
         # Safety check: a Media row sitting at the raw TVDB position isn't
         # automatically the mis-tracked artifact of this mapped episode -
         # TVDB and TMDB can assign genuinely different, unrelated episodes to
-        # the same numeric slot. Only merge if `divergent` is provably that
-        # artifact: enrich_episode_from_tvdb (core/enrichment.py) always
-        # stores the raw TVDB episode id in tmdb_id for an episode with no
-        # TMDB counterpart, which is the exact same id this mapping's
-        # tvdb_id was built from. Without this check, a real, correctly
-        # tracked TMDB episode that just happens to share the same raw
-        # (season, episode) numbers as this mapping's TVDB position would
-        # get its watch history/ratings/etc. silently merged into a
-        # completely different episode.
-        if divergent.tmdb_id != mapping.tvdb_id:
+        # the same numeric slot. Accept the row only when we can prove its
+        # identity in one of the ways Scrob has historically stored it:
+        #   * TVDB-only enrichment stores the TVDB episode id in tmdb_id;
+        #   * Jellyfin can create the row with the canonical TMDB episode id;
+        #   * older TVDB enrichment stores the TVDB id in tmdb_data.
+        # The second case is important for Jellyfin/TVDB sync: the row can
+        # already have the correct TMDB provider id while still carrying the
+        # TVDB-native S02E01 position. Previously that row was rejected here,
+        # leaving its WatchEvent/Collection attached to the wrong Media row.
+        divergent_tvdb_id = (divergent.tmdb_data or {}).get("tvdb_episode_id")
+        same_canonical_tmdb = (
+            canonical.tmdb_id is not None
+            and divergent.tmdb_id == canonical.tmdb_id
+        )
+        same_tvdb_identity = (
+            divergent.tmdb_id == mapping.tvdb_id
+            or (
+                divergent_tvdb_id is not None
+                and str(divergent_tvdb_id) == str(mapping.tvdb_id)
+            )
+        )
+        if not (same_canonical_tmdb or same_tvdb_identity):
             continue
 
         try:
