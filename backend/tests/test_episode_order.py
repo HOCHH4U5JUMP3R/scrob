@@ -677,6 +677,40 @@ class ReconcileDivergentEpisodeMediaTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stats, {"merged": 1, "checked": 1})
         db.delete.assert_awaited_once_with(divergent)
 
+    async def test_merges_jellyfin_row_with_canonical_tmdb_id(self) -> None:
+        # Jellyfin can create the TVDB-native row while already supplying the
+        # canonical TMDB episode id. It is the same real episode as the
+        # canonical row, so its history/collection must be moved across.
+        canonical = Media(
+            id=1, tmdb_id=100, media_type=MediaType.episode,
+            show_id=9, season_number=1, episode_number=13,
+        )
+        divergent = Media(
+            id=2, tmdb_id=100, media_type=MediaType.episode,
+            show_id=9, season_number=2, episode_number=1,
+        )
+        db = AsyncMock()
+        db.begin_nested = MagicMock(return_value=_NestedTxn())
+        db.delete = AsyncMock()
+        db.execute.side_effect = [
+            _ExistingResult([SimpleNamespace(
+                tmdb_season_number=1, tmdb_episode_number=13,
+                tvdb_season_number=2, tvdb_episode_number=1,
+                tvdb_id=700,
+            )]),
+            _ScalarOneResult(canonical),
+            _ScalarOneResult(divergent),
+            None,  # update(WatchEvent)
+            _ExistingResult([]), _ExistingResult([]), _ExistingResult([]),
+            _ExistingResult([]), _ExistingResult([]),
+            None,  # update(Comment)
+        ]
+
+        stats = await reconcile_divergent_episode_media(db, self._show())
+
+        self.assertEqual(stats, {"merged": 1, "checked": 1})
+        db.delete.assert_awaited_once_with(divergent)
+
     async def test_does_not_merge_an_unrelated_episode_at_the_same_raw_position(self) -> None:
         # Regression: TVDB and TMDB can assign different, unrelated episodes
         # to the same numeric (season, episode) slot. A Media row sitting at
