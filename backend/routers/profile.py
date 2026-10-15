@@ -1567,7 +1567,7 @@ async def get_user_stats(
             "id": row.id, "title": row.title, "cover_path": row.cover_path,
             "playtime_minutes": 0, "play_count": 0, "platforms": set(),
             "first_played_at": None, "last_played_at": None,
-            "trophies_earned": 0, "trophies_defined": 0,
+            "trophies_earned": 0, "trophies_defined": 0, "platform_play_counts": {},
         })
         minutes = max(int(row.playtime_minutes or 0), 0)
         plays = max(int(row.play_count or 0), 0)
@@ -1642,7 +1642,6 @@ async def get_user_stats(
             .join(Game, GamePlayActivity.game_id == Game.id)
             .where(*game_activity_filters)
             .order_by(GamePlayActivity.played_at.desc().nulls_last(), GamePlayActivity.id.desc())
-            .limit(1000)
         )).all()
     except Exception:
         await db.rollback()
@@ -1663,33 +1662,66 @@ async def get_user_stats(
     ]
     recorded_playtime = sum(max(int(row.duration_minutes or 0), 0) for row in activity_rows)
 
-    # Period-specific leaderboard: count recorded sessions and minutes rather
-    # than reusing the all-time counters from the latest platform snapshot.
+    # Build the period leaderboard from recorded activity, but preserve the
+    # imported platform snapshots for All time. Imports can contain cumulative
+    # playtime for games that have no recent activity rows at all.
     period_games: dict[int, dict] = {}
     weekday_counts: dict[int, int] = defaultdict(int)
     active_weeks: set[str] = set()
+    xbox_activity_counts: dict[int, int] = defaultdict(int)
     for row in activity_rows:
+        normalized_platform = normalize_game_platform(row.platform)
         game = period_games.setdefault(row.game_id, {
             "id": row.game_id, "title": row.title, "cover_path": row.cover_path,
             "playtime_minutes": 0, "play_count": 0, "platforms": set(),
         })
         game["playtime_minutes"] += max(int(row.duration_minutes or 0), 0)
         game["play_count"] += 1
-        game["platforms"].add(normalize_game_platform(row.platform))
+        game["platforms"].add(normalized_platform)
+        if normalized_platform == "Xbox":
+            xbox_activity_counts[row.game_id] += 1
         if row.played_at:
             # Python weekday: Monday=0; chart order is Sunday through Saturday.
             weekday_counts[(row.played_at.weekday() + 1) % 7] += 1
             iso = row.played_at.isocalendar()
             active_weeks.add(f"{iso.year}-{iso.week:02d}")
 
-    period_top_games = [
-        {**game, "platforms": sorted(game["platforms"])}
-        for game in period_games.values()
-    ]
-    period_top_games.sort(
-        key=lambda game: (game["playtime_minutes"], game["play_count"], game["title"]),
-        reverse=True,
-    )
+    is_all_time = not since and not until
+    if is_all_time:
+        period_top_games = []
+        all_time_play_count = 0
+        for game in game_by_id.values():
+            # Xbox providers do not supply a usable play count, so derive it
+            # from recorded Xbox activity only. Keep imported counts for
+            # PlayStation and other platforms to avoid counting them twice.
+            plays = sum(
+                xbox_activity_counts.get(game["id"], 0) if platform == "Xbox" else count
+                for platform, count in game["platform_play_counts"].items()
+            )
+            all_time_play_count += plays
+            period_top_games.append({
+                "id": game["id"], "title": game["title"], "cover_path": game["cover_path"],
+                "playtime_minutes": game["playtime_minutes"], "play_count": plays,
+                "platforms": sorted(game["platforms"]),
+            })
+        period_top_games.sort(
+            key=lambda game: (game["playtime_minutes"], game["play_count"], game["title"]),
+            reverse=True,
+        )
+        total_game_count = len(game_by_id)
+        total_game_minutes = total_game_playtime
+    else:
+        period_top_games = [
+            {**game, "platforms": sorted(game["platforms"])}
+            for game in period_games.values()
+        ]
+        period_top_games.sort(
+            key=lambda game: (game["playtime_minutes"], game["play_count"], game["title"]),
+            reverse=True,
+        )
+        total_game_count = len(period_games)
+        total_game_minutes = recorded_playtime
+        all_time_play_count = len(activity_rows)
 
     # Normalize day-of-week activity by the number of weeks in the selected
     # interval, matching the media statistics' average-by-week approach.
@@ -1707,21 +1739,21 @@ async def get_user_stats(
     ]
 
     game_stats = {
-        "total_games": len(period_games),
-        "total_playtime_minutes": recorded_playtime,
-        "total_play_count": len(activity_rows),
+        "total_games": total_game_count,
+        "total_playtime_minutes": total_game_minutes,
+        "total_play_count": all_time_play_count,
         "achievements_earned": total_game_achievements,
         "achievements_defined": total_game_achievements_defined,
         "completion_percent": round(total_game_achievements / total_game_achievements_defined * 100, 1) if total_game_achievements_defined else None,
-        "first_played_at": min((row.played_at for row in activity_rows if row.played_at), default=None).isoformat() if any(row.played_at for row in activity_rows) else None,
-        "last_played_at": max((row.played_at for row in activity_rows if row.played_at), default=None).isoformat() if any(row.played_at for row in activity_rows) else None,
+        "first_played_at": min((row.played_at for row in activity_rows if row.played_at), default=None).isoformat() if any(row.played_at for row in activity_rows) else (game_first_played.isoformat() if is_all_time and game_first_played else None),
+        "last_played_at": max((row.played_at for row in activity_rows if row.played_at), default=None).isoformat() if any(row.played_at for row in activity_rows) else (game_last_played.isoformat() if is_all_time and game_last_played else None),
         "platforms": game_platform_stats,
         "top_games": period_top_games[:15],
         "play_history": play_history,
-        "recorded_activity_count": len(activity_rows),
-        "recorded_playtime_minutes": recorded_playtime,
+        "recorded_activity_count": all_time_play_count,
+        "recorded_playtime_minutes": total_game_minutes,
         "weekday_activity": game_weekday_activity,
-        "all_time": not since and not until,
+        "all_time": is_all_time,
     }
 
     return {
