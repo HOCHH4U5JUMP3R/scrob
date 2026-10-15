@@ -103,7 +103,7 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
           <div class="kpi-grid game-overview">
             <div class="kpi-card"><div class="kpi-icon">🎮</div><div id="game-count" class="kpi-value">0</div><div class="kpi-label">Games played</div></div>
             <div class="kpi-card"><div class="kpi-icon">⏱</div><div id="game-time" class="kpi-value">0h</div><div class="kpi-label">Play time</div></div>
-            <div class="kpi-card"><div class="kpi-icon">◷</div><div id="game-plays" class="kpi-value">0</div><div class="kpi-label">Recorded activities</div></div>
+            <div class="kpi-card"><div class="kpi-icon">◷</div><div id="game-plays" class="kpi-value">0</div><div class="kpi-label">Play counts</div></div>
             <div class="kpi-card"><div class="kpi-icon">🏆</div><div id="game-achievements" class="kpi-value">0%</div><div class="kpi-label">Achievement completion</div></div>
           </div>
           <div class="game-grid">
@@ -168,7 +168,9 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
   // Category tabs keep the media library/favourites separate from gaming.
   const statsContent = document.getElementById('stats-content');
   const statsTabs = document.getElementById('stats-tabs');
+  let activeStatsTab = 'media';
   function setStatsTab(tab) {
+    activeStatsTab = tab;
     if (!statsContent) return;
     for (const child of statsContent.children) {
       child.style.display = tab === 'gaming'
@@ -818,6 +820,9 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
       const caption = document.getElementById('period-caption');
       if (caption) caption.textContent = computeRange(currentPeriod).label;
       renderGameStats(data.games);
+      // Rendering the data can update section visibility, so re-apply the
+      // selected category after every fetch.
+      setStatsTab(activeStatsTab);
     } catch { /* silent */ }
     setLoading(false);
   }
