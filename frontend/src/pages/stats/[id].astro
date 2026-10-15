@@ -740,7 +740,15 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
     if (!section || !games) return;
     const set = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
     const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
-    const fmtDateTime = (value) => value ? new Date(value + (String(value).endsWith('Z') ? '' : 'Z')).toLocaleString('de-DE', { dateStyle:'medium', timeStyle:'short' }) : '—';
+    const fmtDateTime = (value) => {
+      if (!value) return '—';
+      const raw = String(value).trim();
+      // Backend timestamps without an explicit zone are UTC; preserve any existing Z/offset.
+      const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw);
+      const date = new Date(hasTimezone ? raw : raw + 'Z');
+      if (Number.isNaN(date.getTime())) return '—';
+      return date.toLocaleString('de-DE', { dateStyle:'medium', timeStyle:'short', timeZone:'Europe/Berlin' });
+    };
     const platformIcon = (platform, size = 15) => {
       const name = String(platform ?? '').toLowerCase();
       const key = name.includes('playstation') || name.startsWith('ps') ? 'playstation'
