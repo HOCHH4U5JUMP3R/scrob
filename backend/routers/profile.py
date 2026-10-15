@@ -1622,11 +1622,15 @@ async def get_user_stats(
     ]
     game_platform_stats.sort(key=lambda x: (x["playtime_minutes"], x["games"]), reverse=True)
 
-    # Game history is optional for the statistics response. A deployment can briefly
-    # have the application code ahead of the database migration; that must not
-    # take the entire statistics endpoint down. If the table is unavailable,
-    # keep the all-time game snapshot and return an empty history until migrations
-    # have caught up.
+    # Historical game activity is the source of truth for period-based gaming
+    # statistics. The per-platform GameUserStats snapshot remains useful for
+    # achievement completion, but its playtime/play count are all-time totals.
+    game_activity_filters = [GamePlayActivity.user_id == user_id]
+    if since:
+        game_activity_filters.append(GamePlayActivity.played_at >= since)
+    if until:
+        game_activity_filters.append(GamePlayActivity.played_at < until + TimeDelta(days=1))
+
     try:
         activity_rows = (await db.execute(
             select(
@@ -1636,9 +1640,9 @@ async def get_user_stats(
                 GamePlayActivity.observed_at,
             )
             .join(Game, GamePlayActivity.game_id == Game.id)
-            .where(GamePlayActivity.user_id == user_id)
+            .where(*game_activity_filters)
             .order_by(GamePlayActivity.played_at.desc().nulls_last(), GamePlayActivity.id.desc())
-            .limit(100)
+            .limit(1000)
         )).all()
     except Exception:
         await db.rollback()
@@ -1659,16 +1663,65 @@ async def get_user_stats(
     ]
     recorded_playtime = sum(max(int(row.duration_minutes or 0), 0) for row in activity_rows)
 
+    # Period-specific leaderboard: count recorded sessions and minutes rather
+    # than reusing the all-time counters from the latest platform snapshot.
+    period_games: dict[int, dict] = {}
+    weekday_counts: dict[int, int] = defaultdict(int)
+    active_weeks: set[str] = set()
+    for row in activity_rows:
+        game = period_games.setdefault(row.game_id, {
+            "id": row.game_id, "title": row.title, "cover_path": row.cover_path,
+            "playtime_minutes": 0, "play_count": 0, "platforms": set(),
+        })
+        game["playtime_minutes"] += max(int(row.duration_minutes or 0), 0)
+        game["play_count"] += 1
+        game["platforms"].add(normalize_game_platform(row.platform))
+        if row.played_at:
+            # Python weekday: Monday=0; chart order is Sunday through Saturday.
+            weekday_counts[(row.played_at.weekday() + 1) % 7] += 1
+            iso = row.played_at.isocalendar()
+            active_weeks.add(f"{iso.year}-{iso.week:02d}")
+
+    period_top_games = [
+        {**game, "platforms": sorted(game["platforms"])}
+        for game in period_games.values()
+    ]
+    period_top_games.sort(
+        key=lambda game: (game["playtime_minutes"], game["play_count"], game["title"]),
+        reverse=True,
+    )
+
+    # Normalize day-of-week activity by the number of weeks in the selected
+    # interval, matching the media statistics' average-by-week approach.
+    if since and until:
+        period_days = max((until - since).days + 1, 1)
+        period_weeks = max((period_days + 6) // 7, 1)
+    elif since or until:
+        period_weeks = max(len(active_weeks), 1)
+    else:
+        period_weeks = max(len(active_weeks), 1)
+    day_names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    game_weekday_activity = [
+        {"day": day_names[i], "avg": round(weekday_counts.get(i, 0) / period_weeks, 2)}
+        for i in range(7)
+    ]
+
     game_stats = {
-        "total_games": len(game_by_id), "total_playtime_minutes": total_game_playtime,
-        "total_play_count": total_game_plays, "achievements_earned": total_game_achievements,
+        "total_games": len(period_games),
+        "total_playtime_minutes": recorded_playtime,
+        "total_play_count": len(activity_rows),
+        "achievements_earned": total_game_achievements,
         "achievements_defined": total_game_achievements_defined,
         "completion_percent": round(total_game_achievements / total_game_achievements_defined * 100, 1) if total_game_achievements_defined else None,
-        "first_played_at": game_first_played.isoformat() if game_first_played else None,
-        "last_played_at": game_last_played.isoformat() if game_last_played else None,
-        "platforms": game_platform_stats, "top_games": top_games[:15],
-        "play_history": play_history, "recorded_activity_count": len(play_history),
-        "recorded_playtime_minutes": recorded_playtime, "all_time": True,
+        "first_played_at": min((row.played_at for row in activity_rows if row.played_at), default=None).isoformat() if any(row.played_at for row in activity_rows) else None,
+        "last_played_at": max((row.played_at for row in activity_rows if row.played_at), default=None).isoformat() if any(row.played_at for row in activity_rows) else None,
+        "platforms": game_platform_stats,
+        "top_games": period_top_games[:15],
+        "play_history": play_history,
+        "recorded_activity_count": len(activity_rows),
+        "recorded_playtime_minutes": recorded_playtime,
+        "weekday_activity": game_weekday_activity,
+        "all_time": not since and not until,
     }
 
     return {
