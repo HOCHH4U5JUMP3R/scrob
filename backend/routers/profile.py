@@ -1272,7 +1272,7 @@ async def get_user_stats(
             watch_time_map[period_key]["show_minutes"] = int(minutes)
     watch_time_activity = sorted(watch_time_map.values(), key=lambda x: x["month"])
 
-    # Average watches per weekday (0=Sun … 6=Sat)
+    # Average watches per weekday; display order is Monday through Sunday (PostgreSQL DOW: Sunday=0).
     from sqlalchemy import extract
     dow_expr = func.extract("dow", WatchEvent.watched_at)
     dow_q = await db.execute(
@@ -1294,9 +1294,9 @@ async def get_user_stats(
         .where(WatchEvent.user_id == user_id, Media.media_type.in_(["movie", "episode"]), *dated_event_filters)
     )
     total_weeks = max(weeks_q.scalar_one() or 1, 1)
-    day_names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     weekday_activity = [
-        {"day": day_names[i], "avg": round(dow_raw.get(i, 0) / total_weeks, 2)}
+        {"day": day_names[i], "avg": round(dow_raw.get((i + 1) % 7, 0) / total_weeks, 2)}
         for i in range(7)
     ]
 
@@ -1573,6 +1573,7 @@ async def get_user_stats(
         plays = max(int(row.play_count or 0), 0)
         game["playtime_minutes"] += minutes
         game["play_count"] += plays
+        game["platform_play_counts"][normalized_platform] = game["platform_play_counts"].get(normalized_platform, 0) + plays
         game["platforms"].add(normalized_platform)
         if row.first_played_at and (game["first_played_at"] is None or row.first_played_at < game["first_played_at"]):
             game["first_played_at"] = row.first_played_at
@@ -1666,7 +1667,7 @@ async def get_user_stats(
     # imported platform snapshots for All time. Imports can contain cumulative
     # playtime for games that have no recent activity rows at all.
     period_games: dict[int, dict] = {}
-    weekday_counts: dict[int, int] = defaultdict(int)
+    weekday_playtime_minutes: dict[int, int] = defaultdict(int)
     active_weeks: set[str] = set()
     xbox_activity_counts: dict[int, int] = defaultdict(int)
     for row in activity_rows:
@@ -1681,8 +1682,8 @@ async def get_user_stats(
         if normalized_platform == "Xbox":
             xbox_activity_counts[row.game_id] += 1
         if row.played_at:
-            # Python weekday: Monday=0; chart order is Sunday through Saturday.
-            weekday_counts[(row.played_at.weekday() + 1) % 7] += 1
+            # Python weekday is Monday=0, matching the chart's Monday-first order.
+            weekday_playtime_minutes[row.played_at.weekday()] += max(int(row.duration_minutes or 0), 0)
             iso = row.played_at.isocalendar()
             active_weeks.add(f"{iso.year}-{iso.week:02d}")
 
@@ -1732,9 +1733,9 @@ async def get_user_stats(
         period_weeks = max(len(active_weeks), 1)
     else:
         period_weeks = max(len(active_weeks), 1)
-    day_names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     game_weekday_activity = [
-        {"day": day_names[i], "avg": round(weekday_counts.get(i, 0) / period_weeks, 2)}
+        {"day": day_names[i], "avg": round(weekday_playtime_minutes.get(i, 0) / period_weeks, 2)}
         for i in range(7)
     ]
 
