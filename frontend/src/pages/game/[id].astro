@@ -32,7 +32,6 @@ const xboxStats = stats.filter((s: any) => isXboxPlatform(s.platform));
 const hasNonXboxStats = stats.some((s: any) => !isXboxPlatform(s.platform));
 const xboxGamerscoreEarned = xboxStats.reduce((sum: number, s: any) => sum + trophyValue(s.trophies_earned, "gamerscore"), 0);
 const xboxGamerscoreDefined = xboxStats.reduce((sum: number, s: any) => sum + trophyValue(s.trophies_defined, "gamerscore"), 0);
-const xboxAchievementsEarned = xboxStats.reduce((sum: number, s: any) => sum + trophyValue(s.trophies_earned, "achievements"), 0);
 const xboxProgress = xboxGamerscoreDefined > 0 ? Math.floor(xboxGamerscoreEarned / xboxGamerscoreDefined * 100) : 0;
 const trophyEarned = stats.filter((s: any) => !isXboxPlatform(s.platform)).reduce((sum: number, s: any) => {
   const t = s.trophies_earned || {};
@@ -54,9 +53,14 @@ const formatMinutes = (minutes: number) => {
   const mins = minutes % 60;
   return hours ? `${hours}h ${mins}m` : `${mins}m`;
 };
+const parseTimestamp = (value: string) => {
+  const raw = String(value).trim();
+  // API timestamps without a zone are UTC; display them in the browser's local timezone.
+  return new Date(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw) ? raw : raw + "Z");
+};
 const formatDate = (value: string | null) => {
   if (!value) return "—";
-  return new Intl.DateTimeFormat("de-DE", { dateStyle: "medium" }).format(new Date(value));
+  return new Intl.DateTimeFormat("de-DE", { dateStyle: "medium" }).format(parseTimestamp(value));
 };
 const latestPlayed = stats
   .map((s: any) => s.last_played_at)
@@ -228,7 +232,7 @@ const latestPlayed = stats
                     </div>
                   </div>
                   <p class="text-xs font-semibold text-zinc-300 mt-2">{activity.played_at ? formatDate(activity.played_at) : "Unknown date"}</p>
-                  <p class="text-[11px] text-zinc-500 mt-1">{activity.played_at ? new Intl.DateTimeFormat("de-DE", { timeStyle: "short" }).format(new Date(activity.played_at)) : "Time unknown"}{activity.observed_at ? " · synced " + formatDate(activity.observed_at) : ""}</p>
+                  <p class="text-[11px] text-zinc-500 mt-1">{activity.played_at ? new Intl.DateTimeFormat("de-DE", { timeStyle: "short" }).format(parseTimestamp(activity.played_at)) : "Time unknown"}{activity.observed_at ? " · synced " + formatDate(activity.observed_at) : ""}</p>
                 </div>
               ))}
             </div>
