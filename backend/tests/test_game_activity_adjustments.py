@@ -27,7 +27,7 @@ def activity(
 
 def test_manual_activity_contributes_to_display_playtime_and_count():
     played_at = datetime(2026, 10, 16, 16, 30)
-    result = buildbuild_activity_adjustments([
+    result = build_activity_adjustments([
         activity(platform="Xbox Series X", duration=45, played_at=played_at),
     ])
 
