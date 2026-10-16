@@ -809,7 +809,7 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
         ? '<div class="weekday-bars">' + values.map(d => {
             const value = Number(d.avg || 0);
             const height = value > 0 ? Math.max(6, Math.round(value / max * 112)) : 0;
-            return '<div class="weekday-bar"><div class="weekday-bar-track"><div class="weekday-bar-fill" style="height:' + height + 'px"></div></div><div class="weekday-bar-value">' + value.toLocaleString('de-DE') + '</div><div class="weekday-bar-label">' + esc(d.day) + '</div></div>';
+            return '<div class="weekday-bar"><div class="weekday-bar-track"><div class="weekday-bar-fill" style="height:' + height + 'px"></div></div><div class="weekday-bar-value">' + fmtGameTime(value) + '</div><div class="weekday-bar-label">' + esc(d.day) + '</div></div>';
           }).join('') + '</div>'
         : '<p class="text-sm text-zinc-500 py-6 text-center">No gaming activity in this period.</p>';
     }
@@ -823,7 +823,7 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
             (a.cover_path ? '<img src="' + esc(a.cover_path) + '" alt="' + esc(a.title) + '" loading="lazy" class="w-full h-full object-cover group-hover:scale-105 transition-transform">' : '<div class="w-full h-full flex items-center justify-center text-zinc-600 text-xs font-bold p-3 text-center">' + esc(a.title) + '</div>') +
           '</div>' +
           '<div class="text-xs text-zinc-300 font-semibold mt-1.5 truncate" title="' + esc(a.title) + '">' + esc(a.title) + '</div>' +
-          '<div class="text-[11px] text-zinc-500">' + (a.played_at ? fmtDateTime(a.played_at) : '—') + '<br><span class="inline-flex items-center gap-1">' + icon + fmtGameTime(a.duration_minutes) + '</span></div>' +
+          '<div class="text-[11px] text-zinc-500">' + (a.played_at ? fmtDateTime(a.played_at) : '—') + '<br><span class="inline-flex items-center gap-1"><span aria-hidden="true">◷</span>' + fmtGameTime(a.duration_minutes) + '</span><br><span class="game-platform" title="' + esc(platform) + '">' + icon + '</span></div>' +
         '</a>';
       }).join('') || '<div class="text-sm text-zinc-500 py-2">Noch keine neue Spielaktivität seit Aktivierung der Historie.</div>';
     }
