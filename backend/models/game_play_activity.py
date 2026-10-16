@@ -8,12 +8,12 @@ from .base import Base
 
 
 class GamePlayActivity(Base):
-    """Immutable playtime activity observed from a game platform.
+    """Recorded game activity, including user-created and user-corrected rows.
 
     Platforms expose cumulative playtime rather than exact session boundaries.
-    Each sync therefore records only the newly observed playtime delta and the
-    provider's latest-played timestamp. This gives us a durable history
-    without inventing a new session on every sync.
+    Each sync records only the newly observed playtime delta. The before/after
+    values preserve that original delta so edits to a synced activity can be
+    reflected in derived statistics without changing the provider baseline.
     """
 
     __tablename__ = "game_play_activity"
