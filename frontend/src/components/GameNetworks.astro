@@ -166,6 +166,14 @@ const { token } = Astro.locals;
     }
   });
 
+  // Sync timestamps from the backend are UTC, but naive ISO strings are parsed by
+  // JavaScript as local time. Add the UTC marker when the API omitted it, then
+  // let the browser render the timestamp in the user's local timezone.
+  const formatLastSync = (value) => {
+    const timestamp = /(?:Z|[+-]\\d{2}:?\\d{2})$/i.test(value) ? value : value + "Z";
+    return new Date(timestamp).toLocaleString("de-DE");
+  };
+
   const api = (path, options = {}) => fetch("/api/proxy" + path, {
     ...options,
     headers: {
@@ -259,7 +267,7 @@ const { token } = Astro.locals;
         steamSyncStatus.textContent = "Last sync failed: " + data.last_sync_error;
         steamSyncStatus.className = "text-[10px] text-red-400 mt-0.5";
       } else if (data.last_sync_at) {
-        steamSyncStatus.textContent = "Last synced: " + new Date(data.last_sync_at).toLocaleString("de-DE") + " · " + (data.last_sync_count ?? 0) + " games";
+        steamSyncStatus.textContent = "Last synced: " + formatLastSync(data.last_sync_at) + " · " + (data.last_sync_count ?? 0) + " games";
       } else {
         steamSyncStatus.textContent = "Last synced: —";
       }
@@ -377,7 +385,7 @@ const { token } = Astro.locals;
         xboxSyncStatus.textContent = "Last sync failed: " + data.last_sync_error;
         xboxSyncStatus.className = "text-[10px] text-red-400 mt-0.5";
       } else if (data.last_sync_at) {
-        xboxSyncStatus.textContent = "Last synced: " + new Date(data.last_sync_at).toLocaleString("de-DE") + " · " + (data.last_sync_count ?? 0) + " games";
+        xboxSyncStatus.textContent = "Last synced: " + formatLastSync(data.last_sync_at) + " · " + (data.last_sync_count ?? 0) + " games";
         xboxSyncStatus.className = "text-[10px] text-zinc-600 mt-0.5";
       } else {
         xboxSyncStatus.textContent = "Last synced: —";
@@ -516,7 +524,7 @@ const { token } = Astro.locals;
         syncStatus.textContent = "Last sync failed: " + data.last_sync_error;
         syncStatus.className = "text-[10px] text-red-400 mt-0.5";
       } else if (data.last_sync_at) {
-        syncStatus.textContent = "Last synced: " + new Date(data.last_sync_at).toLocaleString("de-DE") + " · " + (data.last_sync_count ?? 0) + " games";
+        syncStatus.textContent = "Last synced: " + formatLastSync(data.last_sync_at) + " · " + (data.last_sync_count ?? 0) + " games";
         syncStatus.className = "text-[10px] text-zinc-600 mt-0.5";
       } else {
         syncStatus.textContent = "Last synced: —";
