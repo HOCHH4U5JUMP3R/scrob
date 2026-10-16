@@ -14,9 +14,9 @@ try {
     `http://localhost:${import.meta.env.BACKEND_PORT ?? "7331"}/profile/${id}`,
     token ? { headers: { Authorization: `Bearer ${token}` } } : {}
   );
-  if (res.status === 404) accessError = "User not found.";
-  else if (res.status === 403) accessError = "This profile is private.";
-  else if (!res.ok) accessError = "Failed to load profile.";
+  if (res.status === 404) accessError = "Benutzer nicht gefunden.";
+  else if (res.status === 403) accessError = "Dieses Profil ist privat.";
+  else if (!res.ok) accessError = "Profil konnte nicht geladen werden.";
 } catch {
   accessError = "Failed to load profile.";
 }
@@ -25,16 +25,16 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
 ---
 
 
-<Base title="Statistics">
+<Base title="Statistiken">
   {accessError ? (
     <div class="max-w-md mx-auto mt-20 text-center">
       <div class="bg-zinc-900/50 border border-zinc-800 p-10 rounded-3xl">
         <div class="w-20 h-20 bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-6">
           <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-500"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
         </div>
-        <h2 class="text-2xl font-black text-zinc-100 mb-2">Access Restricted</h2>
+        <h2 class="text-2xl font-black text-zinc-100 mb-2">Zugriff eingeschränkt</h2>
         <p class="text-zinc-400 font-medium mb-8">{accessError}</p>
-        <a href="/" class="px-6 py-3 bg-sky-600 hover:bg-sky-500 text-white font-black rounded-xl transition-all inline-block">Return Home</a>
+        <a href="/" class="px-6 py-3 bg-sky-600 hover:bg-sky-500 text-white font-black rounded-xl transition-all inline-block">Zur Startseite</a>
       </div>
     </div>
   ) : (
@@ -43,26 +43,26 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
       <header class="stats-hero">
         <div class="stats-toolbar">
           <div class="toolbar-left">
-            <a href={'/profile/' + id} class="back-link">← Profile</a>
-            <div><div class="hero-kicker">SCROB · STATISTICS</div></div>
+            <a href={'/profile/' + id} class="back-link">← Profil</a>
+            <div><div class="hero-kicker">SCROB · STATISTIKEN</div></div>
           </div>
           <div class="period-control">
-            <label for="period-select">Time range</label>
+            <label for="period-select">Zeitraum</label>
             <select id="period-select">
-              <option value="all">All time</option><option value="today">Today</option><option value="yesterday">Yesterday</option>
-              <option value="week">This week</option><option value="lastweek">Last week</option><option value="month">This month</option>
-              <option value="lastmonth">Last month</option><option value="year">This year</option><option value="lastyear">Last year</option>
-              <option value="last7">Last 7 days</option><option value="last30">Last 30 days</option><option value="last90">Last 90 days</option>
-              <option value="last365">Last 365 days</option><option value="custom">Custom range…</option>
+              <option value="all">Gesamter Zeitraum</option><option value="today">Heute</option><option value="yesterday">Gestern</option>
+              <option value="week">Diese Woche</option><option value="lastweek">Letzte Woche</option><option value="month">Dieser Monat</option>
+              <option value="lastmonth">Letzter Monat</option><option value="year">Dieses Jahr</option><option value="lastyear">Letztes Jahr</option>
+              <option value="last7">Letzte 7 Tage</option><option value="last30">Letzte 30 Tage</option><option value="last90">Letzte 90 Tage</option>
+              <option value="last365">Letzte 365 Tage</option><option value="custom">Benutzerdefiniert …</option>
             </select>
-            <div id="custom-range" class="hidden items-center gap-2 mt-2"><input id="custom-since" type="date"><span>–</span><input id="custom-until" type="date"><button id="custom-apply">Apply</button></div>
+            <div id="custom-range" class="hidden items-center gap-2 mt-2"><input id="custom-since" type="date"><span>–</span><input id="custom-until" type="date"><button id="custom-apply">Anwenden</button></div>
           </div>
         </div>
       </header>
 
-      <nav id="stats-tabs" class="stats-tabs" aria-label="Statistics category">
+      <nav id="stats-tabs" class="stats-tabs" aria-label="Statistikkategorie">
         <button type="button" class="stats-tab active" data-stats-tab="media" aria-selected="true">Filme &amp; Serien</button>
-        <button type="button" class="stats-tab" data-stats-tab="gaming" aria-selected="false">Gaming</button>
+        <button type="button" class="stats-tab" data-stats-tab="gaming" aria-selected="false">Spiele</button>
       </nav>
 
       <main id="stats-content">
@@ -74,13 +74,13 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
         <section class="feature-grid">
           <div class="panel activity-panel hero-panel">
             <div class="panel-heading">
-              <div><p class="eyebrow">Activity</p><h2>What your time looked like</h2><p class="panel-subcopy">Your watching rhythm across the selected period.</p></div>
-              <span class="panel-badge">Movies + Episodes</span>
+              <div><p class="eyebrow">Aktivität</p><h2>Deine Aktivität im Überblick</h2><p class="panel-subcopy">Dein Sehverhalten im ausgewählten Zeitraum.</p></div>
+              <span class="panel-badge">Filme + Episoden</span>
             </div>
             <div id="activity-chart" class="chart-lg animate-pulse"></div>
           </div>
           <div class="panel time-panel">
-            <div class="panel-heading"><div><p class="eyebrow">Time spent</p><h2>Your screen time</h2></div></div>
+            <div class="panel-heading"><div><p class="eyebrow">Zeitaufwand</p><h2>Deine Bildschirmzeit</h2></div></div>
             <div id="watch-time-breakdown" class="metric-stack animate-pulse"><div class="skeleton h-12"></div><div class="skeleton h-12"></div></div>
             <div id="watch-time-chart" class="chart-sm animate-pulse"></div>
           </div>
@@ -88,13 +88,13 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
 
         <section class="section-block taste-section">
           <div class="section-title">
-            <div><p class="eyebrow">Your taste</p><h2>What you keep coming back to</h2><p class="section-copy">Patterns from your watches, ratings and favourite genres.</p></div>
+            <div><p class="eyebrow">Dein Geschmack</p><h2>Deine Favoriten</h2><p class="section-copy">Muster aus deinem Verlauf, deinen Bewertungen und Lieblingsgenres.</p></div>
           </div>
           <div class="taste-grid">
-            <div class="panel"><h3>Most watched genres</h3><div id="genres-container" class="genre-columns animate-pulse"><div class="skeleton h-40"></div><div class="skeleton h-40"></div></div></div>
-            <div class="panel"><h3>Rating distribution</h3><div id="rating-chart" class="chart-md animate-pulse"></div></div>
-            <div class="panel"><h3>Average ratings</h3><div id="avg-ratings" class="metric-stack animate-pulse"><div class="skeleton h-12"></div><div class="skeleton h-12"></div></div></div>
-            <div class="panel"><h3 id="weekday-chart-title">Average activity by day</h3><div id="weekday-chart" class="chart-md animate-pulse"></div></div>
+            <div class="panel"><h3>Meistgesehene Genres</h3><div id="genres-container" class="genre-columns animate-pulse"><div class="skeleton h-40"></div><div class="skeleton h-40"></div></div></div>
+            <div class="panel"><h3>Bewertungsverteilung</h3><div id="rating-chart" class="chart-md animate-pulse"></div></div>
+            <div class="panel"><h3>Durchschnittliche Bewertungen</h3><div id="avg-ratings" class="metric-stack animate-pulse"><div class="skeleton h-12"></div><div class="skeleton h-12"></div></div></div>
+            <div class="panel"><h3 id="weekday-chart-title">Durchschnittliche Aktivität pro Tag</h3><div id="weekday-chart" class="chart-md animate-pulse"></div></div>
           </div>
         </section>
 
@@ -105,22 +105,22 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
 
           <section class="top-grid game-top-grid">
             <div class="panel poster-panel" id="top-games-card">
-              <h3>Most played</h3>
+              <h3>Meistgespielt</h3>
               <div id="top-games" class="poster-grid"></div>
             </div>
             <div class="panel poster-panel" id="game-history-card">
-              <h3>Recent activity</h3>
+              <h3>Letzte Aktivitäten</h3>
               <div id="game-history" class="poster-grid"></div>
             </div>
           </section>
 
           <section class="section-block taste-section">
             <div class="section-title">
-              <div><p class="eyebrow">Activity</p><h2>When you play</h2><p class="section-copy">Your gaming activity across the selected period.</p></div>
+              <div><p class="eyebrow">Aktivität</p><h2>Wann du spielst</h2><p class="section-copy">Deine Spielaktivität im ausgewählten Zeitraum.</p></div>
             </div>
             <div class="taste-grid game-taste-grid">
               <div class="panel" style="grid-column:1 / -1">
-                <h3 id="game-weekday-title">Activity by day of week</h3>
+                <h3 id="game-weekday-title">Aktivität nach Wochentag</h3>
                 <div id="game-weekday-chart" class="chart-md"></div>
               </div>
             </div>
@@ -128,27 +128,27 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
         </section>
 
         <section id="top-stats" class="section-block" style="display:none">
-          <div class="section-title"><div><p class="eyebrow">Favourites</p><h2>Your most watched</h2><p class="section-copy">The titles, people and studios that dominate your history.</p></div></div>
+          <div class="section-title"><div><p class="eyebrow">Favoriten</p><h2>Am häufigsten gesehen</h2><p class="section-copy">Die Titel, Personen und Studios in deinem Verlauf.</p></div></div>
           <div class="top-grid">
-            <div class="panel poster-panel" id="top-shows-card"><h3>Top shows</h3><div id="top-shows" class="poster-grid"></div></div>
-            <div class="panel poster-panel" id="top-movies-card"><h3>Top movies</h3><div id="top-movies" class="poster-grid"></div></div>
-            <div class="panel" id="top-networks-card"><h3>Favourite networks</h3><div id="top-networks" class="chip-grid"></div></div>
-            <div class="panel" id="top-actors-card"><h3>Most watched actors</h3><div id="top-actors" class="chip-grid"></div></div>
-            <div class="panel" id="top-directors-card"><h3>Favourite directors</h3><div id="top-directors" class="chip-grid"></div></div>
-            <div class="panel" id="top-writers-card"><h3>Favourite writers</h3><div id="top-writers" class="chip-grid"></div></div>
-            <div class="panel" id="top-studios-card"><h3>Favourite studios</h3><div id="top-studios" class="chip-grid"></div></div>
+            <div class="panel poster-panel" id="top-shows-card"><h3>Top-Serien</h3><div id="top-shows" class="poster-grid"></div></div>
+            <div class="panel poster-panel" id="top-movies-card"><h3>Top-Filme</h3><div id="top-movies" class="poster-grid"></div></div>
+            <div class="panel" id="top-networks-card"><h3>Lieblingssender</h3><div id="top-networks" class="chip-grid"></div></div>
+            <div class="panel" id="top-actors-card"><h3>Meistgesehene Schauspieler</h3><div id="top-actors" class="chip-grid"></div></div>
+            <div class="panel" id="top-directors-card"><h3>Lieblingsregisseure</h3><div id="top-directors" class="chip-grid"></div></div>
+            <div class="panel" id="top-writers-card"><h3>Lieblingsautoren</h3><div id="top-writers" class="chip-grid"></div></div>
+            <div class="panel" id="top-studios-card"><h3>Lieblingsstudios</h3><div id="top-studios" class="chip-grid"></div></div>
           </div>
         </section>
 
         <section class="section-block">
-          <div class="section-title"><div><p class="eyebrow">Library</p><h2>Your collection</h2><p class="section-copy">How much of your library you have actually explored.</p></div></div>
+          <div class="section-title"><div><p class="eyebrow">Mediathek</p><h2>Deine Sammlung</h2><p class="section-copy">Wie viel deiner Sammlung du bereits gesehen hast.</p></div></div>
           <div class="collection-grid">
-            <div class="panel"><h3>Collection breakdown</h3><div id="collection-breakdown" class="metric-stack animate-pulse"><div class="skeleton h-12"></div><div class="skeleton h-12"></div><div class="skeleton h-12"></div></div></div>
+            <div class="panel"><h3>Sammlungsübersicht</h3><div id="collection-breakdown" class="metric-stack animate-pulse"><div class="skeleton h-12"></div><div class="skeleton h-12"></div><div class="skeleton h-12"></div></div></div>
             <div class="panel collection-panel"><h3>Watched vs unwatched</h3><div id="collection-pies" class="pie-grid animate-pulse">{[...Array(3)].map(() => <div class="skeleton rounded-full w-24 h-24 mx-auto"></div>)}</div></div>
           </div>
         </section>
 
-        <footer class="stats-footer"><span>SCROB STATISTICS</span><span>Built from your personal history</span></footer>
+        <footer class="stats-footer"><span>SCROB · STATISTIKEN</span><span>Basierend auf deinem Verlauf</span></footer>
       </main>
     </div>
   )}
@@ -240,8 +240,8 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
     return h >= 48 ? `${(mins / 60 / 24).toFixed(1)}d` : `${h}h`;
   }
 
-  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const dayNames   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const monthNames = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+  const dayNames   = ['So','Mo','Di','Mi','Do','Fr','Sa'];
 
   function fillActivityGaps(activityData, since, until, isDaily) {
     if (!since || !until) return activityData;
@@ -294,10 +294,10 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
     const summaryRow = document.getElementById('summary-row');
     if (summaryRow) {
       summaryRow.innerHTML = [
-        { value: data.movies_watched.toLocaleString(),   label: 'Movies Watched' },
-        { value: data.shows_watched.toLocaleString(),    label: 'Shows Watched' },
-        { value: data.episodes_watched.toLocaleString(), label: 'Episodes Watched' },
-        { value: totalH >= 48 ? `${totalD}d` : `${totalH}h`, label: 'Watch Time' },
+        { value: data.movies_watched.toLocaleString(),   label: 'Gesehene Filme' },
+        { value: data.shows_watched.toLocaleString(),    label: 'Gesehene Serien' },
+        { value: data.episodes_watched.toLocaleString(), label: 'Gesehene Episoden' },
+        { value: totalH >= 48 ? `${totalD}d` : `${totalH}h`, label: 'Sehzeit' },
       ].map(({ value, label }) => `
         <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 text-center">
           <p class="text-3xl font-black text-zinc-100 tracking-tight">${value}</p>
@@ -532,8 +532,8 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
         `;
       };
       genresContainer.innerHTML =
-        renderGenreList('Movies', data.top_movie_genres || [], 'rgba(14,165,233,0.1)', '#38bdf8') +
-        renderGenreList('Shows', data.top_show_genres || [], 'rgba(168,85,247,0.1)', '#c084fc');
+        renderGenreList('Filme', data.top_movie_genres || [], 'rgba(14,165,233,0.1)', '#38bdf8') +
+        renderGenreList('Serien', data.top_show_genres || [], 'rgba(168,85,247,0.1)', '#c084fc');
     }
 
     // Watch time breakdown
@@ -653,9 +653,9 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
 
       pieContainer.classList.remove('animate-pulse');
       pieContainer.innerHTML =
-        donut(moviesPct, 'rgba(14,165,233,0.85)', 'rgba(168,85,247,0.7)', 'Movies vs Shows', 'Movies',  'Shows',     data.movies_collected,         data.shows_collected) +
-        donut(mwPct,     'rgba(34,197,94,0.85)',  'rgba(63,63,70,0.6)',   'Movies Watched',  'Watched', 'Unwatched', data.movies_watched_collected, data.movies_unwatched_collected) +
-        donut(swPct,     'rgba(34,197,94,0.85)',  'rgba(63,63,70,0.6)',   'Shows Watched',   'Watched', 'Unwatched', data.shows_watched_collected,  data.shows_unwatched_collected);
+        donut(moviesPct, 'rgba(14,165,233,0.85)', 'rgba(168,85,247,0.7)', 'Filme vs. Serien', 'Movies',  'Shows',     data.movies_collected,         data.shows_collected) +
+        donut(mwPct,     'rgba(34,197,94,0.85)',  'rgba(63,63,70,0.6)',   'Gesehene Filme',  'Gesehen', 'Ungesehen', data.movies_watched_collected, data.movies_unwatched_collected) +
+        donut(swPct,     'rgba(34,197,94,0.85)',  'rgba(63,63,70,0.6)',   'Gesehene Serien',   'Watched', 'Unwatched', data.shows_watched_collected,  data.shows_unwatched_collected);
     }
     renderTopStats(data);
   } // end renderStats
@@ -728,8 +728,8 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
   }
 
   function fmtGameTime(minutes) {
-    const m = Number(minutes || 0), h = Math.floor(m / 60), r = m % 60;
-    return h ? (r ? h + 'h ' + r + 'm' : h + 'h') : r + 'm';
+    const m = Math.max(0, Math.round(Number(minutes || 0))), h = Math.floor(m / 60), r = m % 60;
+    return h ? (r ? h + ' Std. ' + r + ' Min.' : h + ' Std.') : r + ' Min.';
   }
 
   function renderGameStats(games) {
@@ -759,6 +759,7 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
         steam: 'M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.605 0 11.979 0zM7.54 18.21l-1.473-.61c.262.543.714.999 1.314 1.25 1.297.539 2.793-.076 3.332-1.375.263-.63.264-1.319.005-1.949s-.75-1.121-1.377-1.383c-.624-.26-1.29-.249-1.878-.03l1.523.63c.956.4 1.409 1.5 1.009 2.455-.397.957-1.497 1.41-2.454 1.012H7.54zm11.415-9.303c0-1.662-1.353-3.015-3.015-3.015-1.665 0-3.015 1.353-3.015 3.015 0 1.665 1.35 3.015 3.015 3.015 1.663 0 3.015-1.353 3.015-3.015zm-5.273-.005c0-1.252 1.013-2.266 2.265-2.266 1.249 0 2.266 1.014 2.266 2.266 0 1.251-1.017 2.265-2.266 2.265z',
         nintendo: 'M0 .6h7.1l9.85 15.9V.6H24v22.8h-7.04L7.06 7.5v15.9H0V.6Z'
       };
+      if (key === 'steam') return '🖥️';
       return key && paths[key] ? '<svg viewBox="0 0 24 24" width="' + size + '" height="' + size + '" fill="currentColor" aria-hidden="true"><path d="' + paths[key] + '"/></svg>' : '';
     };
     const summaryRow = document.getElementById('game-summary-row');
@@ -767,10 +768,10 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
       const totalHours = Math.round(totalMinutes / 60);
       const totalDays = (totalMinutes / 60 / 24).toFixed(1);
       const summary = [
-        { value: Number(games.total_games || 0).toLocaleString(), label: 'Games Played' },
-        { value: Number(games.total_play_count ?? games.recorded_activity_count ?? 0).toLocaleString(), label: 'Play Count' },
-        { value: games.completion_percent == null ? '—' : games.completion_percent + '%', label: 'Achievements' },
-        { value: totalHours >= 48 ? totalDays + 'd' : totalHours + 'h', label: 'Play Time' },
+        { value: Number(games.total_games || 0).toLocaleString(), label: 'Gespielte Spiele' },
+        { value: Number(games.total_play_count ?? games.recorded_activity_count ?? 0).toLocaleString(), label: 'Spielstarts' },
+        { value: games.completion_percent == null ? '—' : games.completion_percent + '%', label: 'Erfolge' },
+        { value: totalHours >= 48 ? totalDays + 'd' : totalHours + 'h', label: 'Spielzeit' },
       ];
       summaryRow.innerHTML = summary.map(({ value, label }) => `
         <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 text-center">
@@ -799,7 +800,7 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
     const weekdayTitle = document.getElementById('game-weekday-title');
     if (weekdayChart && Array.isArray(games.weekday_activity)) {
       const isWeekly = currentPeriod === 'week' || currentPeriod === 'lastweek' || currentPeriod === 'last7';
-      if (weekdayTitle) weekdayTitle.textContent = isWeekly ? 'Gaming activity by day' : 'Average gaming activity by day of week';
+      if (weekdayTitle) weekdayTitle.textContent = isWeekly ? 'Spielaktivität nach Tag' : 'Durchschnittliche Spielaktivität nach Wochentag';
       const values = games.weekday_activity;
       const max = Math.max(...values.map(d => Number(d.avg || 0)), 1);
       weekdayChart.classList.remove('animate-pulse', 'bg-zinc-800/50', 'rounded-xl');
@@ -811,7 +812,7 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
             const height = value > 0 ? Math.max(6, Math.round(value / max * 112)) : 0;
             return '<div class="weekday-bar"><div class="weekday-bar-track"><div class="weekday-bar-fill" style="height:' + height + 'px"></div></div><div class="weekday-bar-value">' + fmtGameTime(value) + '</div><div class="weekday-bar-label">' + esc(d.day) + '</div></div>';
           }).join('') + '</div>'
-        : '<p class="text-sm text-zinc-500 py-6 text-center">No gaming activity in this period.</p>';
+        : '<p class="text-sm text-zinc-500 py-6 text-center">Keine Spielaktivität in diesem Zeitraum.</p>';
     }
     const history = document.getElementById('game-history');
     if (history) {
@@ -864,7 +865,7 @@ const isOwnStats = currentUser && String(currentUser.id) === String(id);
     }
     if(weekdayTitle) {
       const isWeekly=currentPeriod==='week'||currentPeriod==='lastweek'||currentPeriod==='last7';
-      weekdayTitle.textContent=isWeekly?'Activity by Day of Week':'Average Activity by Day of Week';
+      weekdayTitle.textContent=isWeekly?'Aktivität nach Wochentag':'Durchschnittliche Aktivität nach Wochentag';
     }
     loadStats(since,until);
   }
