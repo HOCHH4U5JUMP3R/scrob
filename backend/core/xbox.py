@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 from typing import Any
 
 from httpx import HTTPStatusError
@@ -15,6 +16,9 @@ from xbox.webapi.common.signed_session import SignedSession
 
 
 # Avoid importing xbox.webapi.scripts because it creates a user data directory at import time.
+logger = logging.getLogger(__name__)
+
+
 OPENXBOX_CLIENT_ID = "-".join(("388ea51c", "0b25", "4029", "aae2", "17df49d23905"))
 OPENXBOX_CLIENT_SECRET = ""
 OPENXBOX_REDIRECT_URI = "http://localhost:8080/auth/callback"
@@ -123,8 +127,19 @@ async def fetch_library(oauth_json: str) -> dict[str, Any]:
                     minutes = _extract_minutes(stats)
                     if minutes is not None:
                         item["playtime_minutes"] = minutes
+                    else:
+                        logger.debug(
+                            "Xbox did not return MinutesPlayed for title %s (%s)",
+                            title.name,
+                            title.title_id,
+                        )
                 except Exception:
-                    pass
+                    logger.warning(
+                        "Could not fetch Xbox MinutesPlayed for title %s (%s)",
+                        title.name,
+                        title.title_id,
+                        exc_info=True,
+                    )
 
             games.append(item)
 
