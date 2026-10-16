@@ -20,6 +20,7 @@ jobs:
     env:
       SECRET_KEY: test-secret-key-for-game-activity-tests
       DATABASE_URL: postgresql+asyncpg://test:test@127.0.0.1:5432/test
+      PYTHONPATH: ${{ github.workspace }}/backend
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
