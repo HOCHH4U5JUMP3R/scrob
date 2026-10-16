@@ -1657,6 +1657,7 @@ async def get_user_stats(
                     "playtime_minutes": 0, "play_count": 0, "platforms": set(),
                     "first_played_at": None, "last_played_at": None,
                     "trophies_earned": 0, "trophies_defined": 0, "platform_play_counts": {},
+                    "platform_playtime_minutes": {},
                 }
                 game_by_id[game_id] = game
             delta = int(adjustment["playtime_delta"])
