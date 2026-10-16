@@ -138,7 +138,7 @@ const latestPlayed = stats
                 <p class="text-lg font-black text-white mt-2">{formatDate(latestPlayed)}</p>
               </div>
               <div class="rounded-2xl border border-zinc-800 bg-zinc-900/75 p-5">
-                <p class="text-xs font-bold text-zinc-500">{trophySummaryLabel}</p>
+                <p class="text-xs font-bold text-zinc-500">{xboxStats.length && !hasNonXboxStats ? <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Erfolge" title="Erfolge"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4Z"/><path d="M7 6H4v2a4 4 0 0 0 4 4M17 6h3v2a4 4 0 0 1-4 4"/></svg> : trophySummaryLabel}</p>
                 <p class={`font-black text-white mt-2 ${trophySummaryValue.length > 14 ? "text-sm" : "text-2xl"}`}>{trophySummaryValue}</p>
               </div>
             </div>
@@ -254,6 +254,7 @@ const latestPlayed = stats
                     </div>
                   </div>
                   <p class="text-xs font-semibold text-zinc-300 mt-2">{activity.played_at ? formatDate(activity.played_at) + " · " + new Intl.DateTimeFormat("de-DE", { timeStyle: "short" }).format(parseTimestamp(activity.played_at)) : "Datum und Uhrzeit unbekannt"}</p>
+                  <button type="button" class="edit-game-activity mt-1 text-[11px] font-semibold text-sky-400 hover:text-sky-300" data-id={activity.id} data-platform={activity.platform} data-source={activity.source} data-date={activity.played_at ?? ""} data-duration={activity.duration_minutes ?? 0}>Bearbeiten</button>
                 </div>
               ))}
             </div>
@@ -289,6 +290,7 @@ const latestPlayed = stats
   const resetActivityForm = () => {
     if (!activityForm) return;
     delete activityForm.dataset.activityId;
+    activityPlatform.disabled = false;
     activityForm.reset();
     activityDate.value = toLocalInput("");
     activityTitle.textContent = "Spielaktivität hinzufügen";
@@ -302,6 +304,7 @@ const latestPlayed = stats
     button.addEventListener("click", () => {
       if (!activityForm) return;
       const platform = button.getAttribute("data-platform") || "Xbox";
+      activityPlatform.disabled = button.getAttribute("data-source") !== "manual";
       const optionExists = Array.from(activityPlatform.options).some((option) => option.value.toLowerCase() === platform.toLowerCase());
       if (!optionExists) activityPlatform.add(new Option(platform, platform));
       activityPlatform.value = platform;

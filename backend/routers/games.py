@@ -199,6 +199,8 @@ async def update_game_activity(
         platform = str(payload["platform"] or "").strip()
         if not platform or len(platform) > 32:
             raise HTTPException(status_code=422, detail="Bitte eine gültige Plattform auswählen.")
+        if activity.source != "manual" and normalize_game_platform(platform) != normalize_game_platform(activity.platform):
+            raise HTTPException(status_code=422, detail="Die Plattform synchronisierter Aktivitäten kann nicht geändert werden.")
         activity.platform = platform
     if "duration_minutes" in payload:
         try:
@@ -240,7 +242,7 @@ async def get_game(
     )
     game = result.scalar_one_or_none()
     if not game:
-        raise HTTPException(status_code=404, detail="Game not found")
+        raise HTTPException(status_code=404, detail="Spiel nicht gefunden")
 
     all_activity_result = await db.execute(select(GamePlayActivity).where(GamePlayActivity.user_id == current_user.id))
     adjustments = _activity_adjustments(all_activity_result.scalars().all())
