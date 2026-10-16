@@ -272,7 +272,7 @@ const latestPlayed = stats
 </Base>
 
 <script>
-  const appToken = document.getElementById("app-data")?.getAttribute("data-token") || "";
+  const appToken = "";
   const gameId = location.pathname.split("/").filter(Boolean).pop();
   const headers = { "Content-Type": "application/json", ...(appToken ? { Authorization: `Bearer ${appToken}` } : {}) };
   const message = document.getElementById("game-activity-message");
@@ -290,7 +290,7 @@ const latestPlayed = stats
     const playedAt = String(form.get("played_at") || "");
     const payload = { platform: form.get("platform"), played_at: playedAt ? new Date(playedAt).toISOString() : null, duration_minutes: Number(form.get("duration_minutes") || 0) };
     try {
-      const response = await fetch(`/api/games/${gameId}/activity`, { method: "POST", headers, body: JSON.stringify(payload) });
+      const response = await fetch(`/api/proxy/games/${gameId}/activity`, { method: "POST", headers, body: JSON.stringify(payload) });
       if (!response.ok) throw new Error("Aktivität konnte nicht gespeichert werden.");
       if (message) message.textContent = "Aktivität gespeichert. Seite wird aktualisiert …";
       location.reload();
@@ -306,7 +306,7 @@ const latestPlayed = stats
       const date = prompt("Datum und Uhrzeit (ISO-Format, z. B. 2026-10-16T18:30):", (button.getAttribute("data-date") || "").replace("Z", ""));
       if (date === null) return;
       try {
-        const response = await fetch("/api/games/activity/" + id, { method: "PATCH", headers, body: JSON.stringify({ platform, duration_minutes: Number(duration), played_at: date ? new Date(date).toISOString() : null }) });
+        const response = await fetch("/api/proxy/games/activity/" + id, { method: "PATCH", headers, body: JSON.stringify({ platform, duration_minutes: Number(duration), played_at: date ? new Date(date).toISOString() : null }) });
         if (!response.ok) throw new Error("Aktivität konnte nicht bearbeitet werden.");
         location.reload();
       } catch (error) { alert(error instanceof Error ? error.message : "Speichern fehlgeschlagen."); }
