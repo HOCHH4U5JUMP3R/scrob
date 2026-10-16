@@ -1,7 +1,7 @@
 from datetime import datetime
 from types import SimpleNamespace
 
-from routers.games import _activity_adjustments
+from core.game_activity import build_activity_adjustments
 
 
 def activity(
@@ -27,7 +27,7 @@ def activity(
 
 def test_manual_activity_contributes_to_display_playtime_and_count():
     played_at = datetime(2026, 10, 16, 16, 30)
-    result = _activity_adjustments([
+    result = buildbuild_activity_adjustments([
         activity(platform="Xbox Series X", duration=45, played_at=played_at),
     ])
 
@@ -39,7 +39,7 @@ def test_manual_activity_contributes_to_display_playtime_and_count():
 
 
 def test_editing_synced_duration_only_applies_difference_from_original_delta():
-    result = _activity_adjustments([
+    result = build_activity_adjustments([
         activity(
             platform="PlayStation 5",
             duration=50,
@@ -56,7 +56,7 @@ def test_editing_synced_duration_only_applies_difference_from_original_delta():
 
 
 def test_manual_and_edited_activity_adjustments_are_combined_by_platform():
-    result = _activity_adjustments([
+    result = build_activity_adjustments([
         activity(platform="Steam", duration=60, played_at=datetime(2026, 10, 14, 18, 0)),
         activity(
             platform="PC",

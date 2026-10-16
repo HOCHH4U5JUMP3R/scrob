@@ -30,6 +30,7 @@ from models.global_settings import GlobalSettings
 from models.games import Game, GameUserStats
 from models.game_play_activity import GamePlayActivity
 from core.game_platforms import normalize_game_platform
+from core.game_activity import build_activity_adjustments
 from core.config import settings
 import schemas
 
@@ -1567,12 +1568,13 @@ async def get_user_stats(
             "id": row.id, "title": row.title, "cover_path": row.cover_path,
             "playtime_minutes": 0, "play_count": 0, "platforms": set(),
             "first_played_at": None, "last_played_at": None,
-            "trophies_earned": 0, "trophies_defined": 0, "platform_play_counts": {},
+            "trophies_earned": 0, "trophies_defined": 0, "platform_play_counts": {}, "platform_playtime_minutes": {},
         })
         minutes = max(int(row.playtime_minutes or 0), 0)
         plays = max(int(row.play_count or 0), 0)
         game["playtime_minutes"] += minutes
         game["play_count"] += plays
+        game["platform_playtime_minutes"][normalized_platform] = game["platform_playtime_minutes"].get(normalized_platform, 0) + minutes
         game["platform_play_counts"][normalized_platform] = game["platform_play_counts"].get(normalized_platform, 0) + plays
         game["platforms"].add(normalized_platform)
         if row.first_played_at and (game["first_played_at"] is None or row.first_played_at < game["first_played_at"]):
@@ -1616,13 +1618,6 @@ async def get_user_stats(
         })
     top_games.sort(key=lambda x: (x["playtime_minutes"], x["play_count"], x["title"]), reverse=True)
 
-    game_platform_stats = [
-        {"platform": platform, "games": len(values["games"]),
-         "playtime_minutes": values["playtime_minutes"], "play_count": values["play_count"]}
-        for platform, values in game_platforms.items()
-    ]
-    game_platform_stats.sort(key=lambda x: (x["playtime_minutes"], x["games"]), reverse=True)
-
     # Historical game activity is the source of truth for period-based gaming
     # statistics. The per-platform GameUserStats snapshot remains useful for
     # achievement completion, but its playtime/play count are all-time totals.
@@ -1638,7 +1633,8 @@ async def get_user_stats(
                 GamePlayActivity.id, GamePlayActivity.game_id, Game.title,
                 Game.cover_path, GamePlayActivity.platform,
                 GamePlayActivity.played_at, GamePlayActivity.duration_minutes,
-                GamePlayActivity.observed_at,
+                GamePlayActivity.observed_at, GamePlayActivity.playtime_before_minutes,
+                GamePlayActivity.playtime_after_minutes, GamePlayActivity.source,
             )
             .join(Game, GamePlayActivity.game_id == Game.id)
             .where(*game_activity_filters)
@@ -1647,6 +1643,46 @@ async def get_user_stats(
     except Exception:
         await db.rollback()
         activity_rows = []
+
+    is_all_time = not since and not until
+    if is_all_time:
+        activity_adjustments = build_activity_adjustments(activity_rows)
+
+        for (game_id, platform), adjustment in activity_adjustments.items():
+            game = game_by_id.get(game_id)
+            if game is None:
+                activity = next(row for row in activity_rows if row.game_id == game_id)
+                game = {
+                    "id": game_id, "title": activity.title, "cover_path": activity.cover_path,
+                    "playtime_minutes": 0, "play_count": 0, "platforms": set(),
+                    "first_played_at": None, "last_played_at": None,
+                    "trophies_earned": 0, "trophies_defined": 0, "platform_play_counts": {},
+                }
+                game_by_id[game_id] = game
+            delta = int(adjustment["playtime_delta"])
+            manual_count = int(adjustment["manual_activity_count"])
+            game["platform_playtime_minutes"][platform] = max(0, game["platform_playtime_minutes"].get(platform, 0) + delta)
+            game["playtime_minutes"] = sum(game["platform_playtime_minutes"].values())
+            game["play_count"] += manual_count
+            game["platforms"].add(platform)
+            game["platform_play_counts"][platform] = game["platform_play_counts"].get(platform, 0) + manual_count
+            platform_totals = game_platforms[platform]
+            platform_totals["games"].add(game_id)
+            platform_totals["play_count"] += manual_count
+
+        for values in game_platforms.values():
+            values["playtime_minutes"] = 0
+        for game in game_by_id.values():
+            for platform, minutes in game["platform_playtime_minutes"].items():
+                game_platforms[platform]["playtime_minutes"] += minutes
+        total_game_playtime = sum(game["playtime_minutes"] for game in game_by_id.values())
+
+    game_platform_stats = [
+        {"platform": platform, "games": len(values["games"]),
+         "playtime_minutes": max(0, values["playtime_minutes"]), "play_count": values["play_count"]}
+        for platform, values in game_platforms.items()
+    ]
+    game_platform_stats.sort(key=lambda x: (x["playtime_minutes"], x["games"]), reverse=True)
 
     play_history = [
         {
@@ -1687,7 +1723,6 @@ async def get_user_stats(
             iso = row.played_at.isocalendar()
             active_weeks.add(f"{iso.year}-{iso.week:02d}")
 
-    is_all_time = not since and not until
     if is_all_time:
         period_top_games = []
         all_time_play_count = 0
