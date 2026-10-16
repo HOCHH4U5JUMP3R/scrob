@@ -111,7 +111,6 @@ async def get_game(
             GamePlayActivity.user_id == current_user.id,
         )
         .order_by(GamePlayActivity.played_at.desc(), GamePlayActivity.id.desc())
-        .limit(50)
     )
     payload["play_history"] = [
         {
