@@ -96,9 +96,9 @@ function formatPlaytime(minutes: number | null): string | null {
   const hours = Math.floor(minutes / 60);
   const remaining = minutes % 60;
 
-  if (hours === 0) return `${remaining}m played`;
-  if (remaining === 0) return `${hours}h played`;
-  return `${hours}h ${remaining}m played`;
+  if (hours === 0) return `${remaining} Min. gespielt`;
+  if (remaining === 0) return `${hours} Std. gespielt`;
+  return `${hours} Std. ${remaining} Min. gespielt`;
 }
 
 function platformIcon(platform: PlatformKey, size = 18): string {
@@ -123,15 +123,15 @@ const sections = PLATFORM_SECTIONS
   }))
   .filter((section) => section.games.length > 0);
 ---
-<Base title="Games">
+<Base title="Spiele">
   <div id="app-data" data-token={token} class="hidden" aria-hidden="true"></div>
 
   <div class="max-w-7xl mx-auto px-4 sm:px-6 py-6 md:py-10">
     <div class="flex items-end justify-between gap-4 flex-wrap mb-10">
       <div>
         <p class="text-[10px] font-black uppercase tracking-[.2em] text-sky-400">Gaming</p>
-        <h1 class="page-title mt-2">Games</h1>
-        <p class="text-sm text-zinc-500 mt-2">Your games across PlayStation, Xbox, Steam and Nintendo.</p>
+        <h1 class="page-title mt-2">Spiele</h1>
+        <p class="text-sm text-zinc-500 mt-2">Deine Spiele auf PlayStation, Xbox, Steam und Nintendo.</p>
       </div>
       <div class="flex items-center gap-3">
         <label for="game-sort" class="text-xs font-bold uppercase tracking-wider text-zinc-600">Sortieren</label>
@@ -140,7 +140,7 @@ const sections = PLATFORM_SECTIONS
             <option value={option.value} selected={option.value === sortMode}>{option.label}</option>
           ))}
         </select>
-        <span class="text-sm font-bold text-zinc-500">{games.length} {games.length === 1 ? "game" : "games"}</span>
+        <span class="text-sm font-bold text-zinc-500">{games.length} {games.length === 1 ? "Spiel" : "Spiele"}</span>
       </div>
     </div>
 
@@ -149,8 +149,8 @@ const sections = PLATFORM_SECTIONS
         <div class="mx-auto mb-5 w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-600">
           <span class="text-3xl">🎮</span>
         </div>
-        <h2 class="text-xl font-black text-zinc-200">No games yet</h2>
-        <p class="text-sm text-zinc-500 max-w-md mx-auto mt-2">Connect PlayStation, Xbox, Steam or Nintendo and the unified game library will appear here.</p>
+        <h2 class="text-xl font-black text-zinc-200">Noch keine Spiele</h2>
+        <p class="text-sm text-zinc-500 max-w-md mx-auto mt-2">Verbinde PlayStation, Xbox, Steam oder Nintendo, damit deine gemeinsame Spielebibliothek hier erscheint.</p>
       </div>
     ) : (
       <div class="space-y-12">

@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import datetime, timezone
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -87,6 +88,90 @@ async def delete_game_library(
         "deleted_stats": deleted_stats.rowcount or 0,
         "deleted_games": len(orphaned_games),
     }
+
+
+@router.post("/{game_id}/activity")
+async def create_game_activity(
+    game_id: int,
+    payload: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user_or_api_key),
+):
+    """Manually add a play activity for the current user."""
+    game = await db.get(Game, game_id)
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+    platform = str(payload.get("platform") or "").strip()
+    if not platform or len(platform) > 32:
+        raise HTTPException(status_code=422, detail="A valid platform is required")
+    try:
+        duration = int(payload.get("duration_minutes", 0))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Duration must be a whole number")
+    if duration < 0 or duration > 1000000:
+        raise HTTPException(status_code=422, detail="Duration is out of range")
+    try:
+        raw_date = payload.get("played_at")
+        played_at = datetime.fromisoformat(str(raw_date).replace("Z", "+00:00")) if raw_date else datetime.now(timezone.utc)
+        if played_at.tzinfo is not None:
+            played_at = played_at.astimezone(timezone.utc).replace(tzinfo=None)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Invalid date or time")
+    activity = GamePlayActivity(
+        user_id=current_user.id, game_id=game_id, platform=platform,
+        played_at=played_at, duration_minutes=duration, source="manual",
+    )
+    db.add(activity)
+    await db.commit()
+    await db.refresh(activity)
+    return {"id": activity.id, "game_id": activity.game_id, "platform": activity.platform,
+            "played_at": activity.played_at.isoformat() if activity.played_at else None,
+            "duration_minutes": activity.duration_minutes, "observed_at": activity.observed_at.isoformat(),
+            "source": activity.source}
+
+
+@router.patch("/activity/{activity_id}")
+async def update_game_activity(
+    activity_id: int,
+    payload: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user_or_api_key),
+):
+    """Edit a play activity owned by the current user."""
+    result = await db.execute(select(GamePlayActivity).where(
+        GamePlayActivity.id == activity_id,
+        GamePlayActivity.user_id == current_user.id,
+    ))
+    activity = result.scalar_one_or_none()
+    if activity is None:
+        raise HTTPException(status_code=404, detail="Play activity not found")
+    if "platform" in payload:
+        platform = str(payload["platform"] or "").strip()
+        if not platform or len(platform) > 32:
+            raise HTTPException(status_code=422, detail="A valid platform is required")
+        activity.platform = platform
+    if "duration_minutes" in payload:
+        try:
+            duration = int(payload["duration_minutes"])
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="Duration must be a whole number")
+        if duration < 0 or duration > 1000000:
+            raise HTTPException(status_code=422, detail="Duration is out of range")
+        activity.duration_minutes = duration
+    if "played_at" in payload:
+        try:
+            value = payload["played_at"]
+            activity.played_at = datetime.fromisoformat(str(value).replace("Z", "+00:00")) if value else None
+            if activity.played_at and activity.played_at.tzinfo is not None:
+                activity.played_at = activity.played_at.astimezone(timezone.utc).replace(tzinfo=None)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="Invalid date or time")
+    await db.commit()
+    await db.refresh(activity)
+    return {"id": activity.id, "game_id": activity.game_id, "platform": activity.platform,
+            "played_at": activity.played_at.isoformat() if activity.played_at else None,
+            "duration_minutes": activity.duration_minutes, "observed_at": activity.observed_at.isoformat(),
+            "source": activity.source}
 
 @router.get("/{game_id}")
 async def get_game(
