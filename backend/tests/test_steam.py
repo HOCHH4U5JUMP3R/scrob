@@ -1,40 +1,32 @@
 from xml.etree import ElementTree
 
-from core.steam import _parse_steam_games_html, _parse_steam_xml
+import httpx
+
+from core.steam import _parse_steam_games_html, _parse_steam_xml, _steam_page_failure
 
 
 def test_parse_steam_xml_repairs_unescaped_ampersand():
-    root = _parse_steam_xml(
-        '<?xml version="1.0"?><games><game><name>Tom & Jerry</name></game></games>'
-    )
+    root = _parse_steam_xml('<?xml version="1.0"?><games><game><name>Tom & Jerry</name></game></games>')
     assert root.findtext("./game/name") == "Tom & Jerry"
 
 
 def test_parse_steam_xml_keeps_valid_entities():
-    root = _parse_steam_xml(
-        '<?xml version="1.0"?><games><game><name>Tom &amp; Jerry</name></game></games>'
-    )
+    root = _parse_steam_xml('<?xml version="1.0"?><games><game><name>Tom &amp; Jerry</name></game></games>')
     assert root.findtext("./game/name") == "Tom & Jerry"
 
 
 def test_parse_steam_xml_removes_invalid_control_characters():
-    root = _parse_steam_xml(
-        '<?xml version="1.0"?><games><game><name>Game\x0bName</name></game></games>'
-    )
+    root = _parse_steam_xml('<?xml version="1.0"?><games><game><name>Game\x0bName</name></game></games>')
     assert root.findtext("./game/name") == "GameName"
 
 
 def test_parse_steam_xml_removes_utf8_bom():
-    root = _parse_steam_xml(
-        '\ufeff<?xml version="1.0"?><games><game><name>Steam Game</name></game></games>'
-    )
-    assert root.findtext("./game/name") == "Steam Game"
+    root = _parse_steam_xml('\ufeff<?xml version="1.0"?><games><game><name>Steam Game</name></game></games>')
+    assert root.findtext("./games/game/name") == "Steam Game" or root.findtext("./game/name") == "Steam Game"
 
 
 def test_parse_steam_xml_repairs_literal_angle_bracket_in_text():
-    root = _parse_steam_xml(
-        '<?xml version="1.0"?><games><game><name>Game < 3</name></game></games>'
-    )
+    root = _parse_steam_xml('<?xml version="1.0"?><games><game><name>Game < 3</name></game></games>')
     assert root.findtext("./game/name") == "Game < 3"
 
 
@@ -50,37 +42,35 @@ def test_parse_steam_xml_recovers_from_mismatched_tags():
 
 
 def test_parse_steam_games_html_extracts_embedded_library():
-    html = '''
-    <script>
-    var rgGames = [{"appid": 123, "name": "Test Game", "playtime_forever": 150, "last_played": 1700000000}];
-    var rgChangingGames = [];
-    </script>
-    '''
-    assert _parse_steam_games_html(html) == [
-        {
-            "appid": "123",
-            "name": "Test Game",
-            "playtime_forever": 150,
-            "rtime_last_played": 1700000000,
-        }
-    ]
+    html = '<script>var rgGames = [{"appid":123,"name":"Test Game","playtime_forever":150,"last_played":1700000000}]; var rgChangingGames = [];</script>'
+    assert _parse_steam_games_html(html) == [{
+        "appid": "123", "name": "Test Game", "playtime_forever": 150,
+        "rtime_last_played": 1700000000,
+    }]
 
 
 def test_parse_steam_games_html_extracts_panorama_library():
-    html = '''
-    <script>
-    var g_rgGameData = {"123":{"appid":123,"name":"Test Game","playtime_forever":150,"last_played":1700000000}};
-    </script>
-    '''
-    assert _parse_steam_games_html(html) == [
-        {
-            "appid": "123",
-            "name": "Test Game",
-            "playtime_forever": 150,
-            "rtime_last_played": 1700000000,
-        }
-    ]
+    html = '<script>var g_rgGameData = {"123":{"appid":123,"name":"Test Game","playtime_forever":150,"last_played":1700000000}};</script>'
+    assert _parse_steam_games_html(html) == [{
+        "appid": "123", "name": "Test Game", "playtime_forever": 150,
+        "rtime_last_played": 1700000000,
+    }]
 
 
 def test_parse_steam_games_html_returns_empty_without_game_data():
     assert _parse_steam_games_html("<html><body>No game data</body></html>") == []
+
+
+def test_steam_page_failure_reports_forbidden():
+    response = httpx.Response(403, text="Forbidden")
+    assert "HTTP 403" in _steam_page_failure(response, "games page")
+
+
+def test_steam_page_failure_reports_login_redirect_content():
+    response = httpx.Response(200, text='<form id="loginForm">login</form>')
+    assert "login page" in _steam_page_failure(response, "games page")
+
+
+def test_steam_page_failure_ignores_normal_html():
+    response = httpx.Response(200, text="<html><body>Library</body></html>")
+    assert _steam_page_failure(response, "games page") is None

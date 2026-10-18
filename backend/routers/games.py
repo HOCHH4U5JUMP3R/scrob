@@ -49,25 +49,13 @@ def _game(game: Game, current_user_id: int, activity_adjustments: dict | None = 
             "trophy_progress": None, "trophies_earned": None, "trophies_defined": None,
         })
     return {
-        "id": game.id,
-        "title": game.title,
-        "original_title": game.original_title,
-        "slug": game.slug,
-        "overview": game.overview,
-        "cover_path": game.cover_path,
+        "id": game.id, "title": game.title, "original_title": game.original_title,
+        "slug": game.slug, "overview": game.overview, "cover_path": game.cover_path,
         "backdrop_path": game.backdrop_path,
         "release_date": game.release_date.isoformat() if game.release_date else None,
         "genres": game.genres or [],
-        "platforms": [
-            {
-                "id": p.id,
-                "platform": p.platform,
-                "external_id": p.external_id,
-                "platform_name": p.platform_name,
-                "external_url": p.external_url,
-            }
-            for p in game.platforms
-        ],
+        "platforms": [{"id": p.id, "platform": p.platform, "external_id": p.external_id,
+                       "platform_name": p.platform_name, "external_url": p.external_url} for p in game.platforms],
         "stats": stats,
     }
 
@@ -82,9 +70,7 @@ async def list_games(
     current_user: User = Depends(get_current_user_or_api_key),
 ):
     result = await db.execute(
-        select(Game)
-        .options(selectinload(Game.platforms), selectinload(Game.user_stats))
-        .order_by(Game.title.asc())
+        select(Game).options(selectinload(Game.platforms), selectinload(Game.user_stats)).order_by(Game.title.asc())
     )
     games = result.scalars().unique().all()
     activity_result = await db.execute(select(GamePlayActivity).where(GamePlayActivity.user_id == current_user.id))
@@ -92,6 +78,39 @@ async def list_games(
     return {"results": [_game(game, current_user.id, adjustments) for game in games]}
 
 
+@router.post("/manual")
+async def create_manual_game(
+    payload: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user_or_api_key),
+):
+    """Create a personal PC game without depending on a store/provider catalog."""
+    title = str(payload.get("title") or "").strip()
+    if not title or len(title) > 500:
+        raise HTTPException(status_code=422, detail="Bitte einen gültigen Spieltitel eingeben (max. 500 Zeichen).")
+
+    # Reuse an existing exact-title game for this user's PC library; otherwise
+    # create a standalone catalog row. No fake Steam app ID is created.
+    result = await db.execute(select(Game).where(Game.title.ilike(title)).order_by(Game.id.asc()))
+    game = result.scalars().first()
+    if game is None:
+        game = Game(title=title, metadata_json={"created_manually": True})
+        db.add(game)
+        await db.flush()
+
+    existing = await db.execute(select(GameUserStats).where(
+        GameUserStats.user_id == current_user.id,
+        GameUserStats.game_id == game.id,
+        GameUserStats.platform == "PC",
+    ))
+    if existing.scalar_one_or_none() is None:
+        db.add(GameUserStats(
+            user_id=current_user.id, game_id=game.id, platform="PC",
+            play_count=0, playtime_minutes=0,
+            metadata_json={"source": "manual"},
+        ))
+    await db.commit()
+    return {"id": game.id, "title": game.title, "platform": "PC", "url": f"/game/{game.id}"}
 
 
 @router.delete("/library")
@@ -100,22 +119,14 @@ async def delete_game_library(
     current_user: User = Depends(get_current_user_or_api_key),
 ):
     """Remove all game statistics owned by the current user and clean up orphaned games."""
-    deleted_stats = await db.execute(
-        delete(GameUserStats).where(GameUserStats.user_id == current_user.id)
-    )
-
-    orphan_result = await db.execute(
-        select(Game).where(~Game.user_stats.any())
-    )
+    deleted_stats = await db.execute(delete(GameUserStats).where(GameUserStats.user_id == current_user.id))
+    orphan_result = await db.execute(select(Game).where(~Game.user_stats.any()))
     orphaned_games = orphan_result.scalars().all()
     for game in orphaned_games:
         await db.delete(game)
-
     await db.commit()
-    return {
-        "deleted_stats": deleted_stats.rowcount or 0,
-        "deleted_games": len(orphaned_games),
-    }
+    return {"deleted_stats": deleted_stats.rowcount or 0, "deleted_games": len(orphaned_games)}
+
 
 @router.post("/{game_id}/activity")
 async def create_game_activity(
@@ -169,8 +180,7 @@ async def update_game_activity(
 ):
     """Edit a play activity owned by the authenticated user."""
     result = await db.execute(select(GamePlayActivity).where(
-        GamePlayActivity.id == activity_id,
-        GamePlayActivity.user_id == current_user.id,
+        GamePlayActivity.id == activity_id, GamePlayActivity.user_id == current_user.id,
     ))
     activity = result.scalar_one_or_none()
     if activity is None:
@@ -216,37 +226,26 @@ async def get_game(
     current_user: User = Depends(get_current_user_or_api_key),
 ):
     result = await db.execute(
-        select(Game)
-        .options(selectinload(Game.platforms), selectinload(Game.user_stats))
-        .where(Game.id == game_id)
+        select(Game).options(selectinload(Game.platforms), selectinload(Game.user_stats)).where(Game.id == game_id)
     )
     game = result.scalar_one_or_none()
     if not game:
         raise HTTPException(status_code=404, detail="Spiel nicht gefunden")
-
     all_activity_result = await db.execute(select(GamePlayActivity).where(GamePlayActivity.user_id == current_user.id))
     adjustments = _activity_adjustments(all_activity_result.scalars().all())
     payload = _game(game, current_user.id, adjustments)
     activity_result = await db.execute(
-        select(GamePlayActivity)
-        .where(
-            GamePlayActivity.game_id == game_id,
-            GamePlayActivity.user_id == current_user.id,
-        )
+        select(GamePlayActivity).where(GamePlayActivity.game_id == game_id, GamePlayActivity.user_id == current_user.id)
         .order_by(GamePlayActivity.played_at.desc(), GamePlayActivity.id.desc())
     )
     payload["play_history"] = [
-        {
-            "id": activity.id,
-            "game_id": activity.game_id,
-            "platform": activity.platform,
-            "played_at": activity.played_at.isoformat() if activity.played_at else None,
-            "duration_minutes": activity.duration_minutes,
-            "playtime_before_minutes": activity.playtime_before_minutes,
-            "playtime_after_minutes": activity.playtime_after_minutes,
-            "observed_at": activity.observed_at.isoformat() if activity.observed_at else None,
-            "source": activity.source,
-        }
+        {"id": activity.id, "game_id": activity.game_id, "platform": activity.platform,
+         "played_at": activity.played_at.isoformat() if activity.played_at else None,
+         "duration_minutes": activity.duration_minutes,
+         "playtime_before_minutes": activity.playtime_before_minutes,
+         "playtime_after_minutes": activity.playtime_after_minutes,
+         "observed_at": activity.observed_at.isoformat() if activity.observed_at else None,
+         "source": activity.source}
         for activity in activity_result.scalars().all()
     ]
     return payload

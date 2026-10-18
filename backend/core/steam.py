@@ -63,7 +63,7 @@ def _parse_steam_xml(xml_text: str) -> ElementTree.Element:
 
 
 def _parse_steam_games_html(html_text: str) -> list[dict]:
-    """Extract Steam's public game data from the games page."""
+    """Extract Steam's public game data from known embedded games payloads."""
     for marker in ("var g_rgGameData = ", "var rgGames = "):
         start = html_text.find(marker)
         if start < 0:
@@ -124,6 +124,22 @@ def _parse_steam_games_html(html_text: str) -> list[dict]:
     return []
 
 
+def _steam_page_failure(response: httpx.Response, source: str) -> str | None:
+    """Return a safe, actionable diagnosis when Steam serves a non-library page."""
+    body = response.text[:50000].lower()
+    if response.status_code in (401, 403):
+        return f"Steam {source} returned HTTP {response.status_code}; access to the public library is denied."
+    if response.status_code == 429:
+        return f"Steam {source} rate-limited the request (HTTP 429). Try again later."
+    if "loginform" in body or "login_form" in body or "steamcommunity.com/login" in body:
+        return f"Steam {source} redirected to a login page instead of returning the public library."
+    if "captcha" in body or "verify you are human" in body or "steam guard" in body:
+        return f"Steam {source} returned an anti-bot or verification page, not the game library."
+    if "private" in body and ("game details" in body or "profile" in body):
+        return f"Steam {source} indicates that the profile or game details are private."
+    return None
+
+
 def authorization_url(return_to: str) -> str:
     params = {
         "openid.ns": "http://specs.openid.net/auth/2.0",
@@ -179,7 +195,7 @@ async def get_player(steam_id: str) -> dict:
 
 
 async def fetch_library(steam_id: str) -> dict:
-    """Read the public Steam games page without requiring a Steam API key."""
+    """Read the public Steam library and report why neither endpoint yielded games."""
     xml_url = f"{STEAM_COMMUNITY_URL}/profiles/{steam_id}/games/?tab=all&xml=1"
     html_url = f"{STEAM_COMMUNITY_URL}/profiles/{steam_id}/games/?tab=all"
     headers = {
@@ -187,49 +203,61 @@ async def fetch_library(steam_id: str) -> dict:
         "X-ValveUserAgent": "panorama",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
+    failures: list[str] = []
 
     async with httpx.AsyncClient(timeout=90, follow_redirects=True, headers=headers) as client:
         response = await client.get(xml_url)
         response.raise_for_status()
-
-        root = _parse_steam_xml(response.text)
-        error = root.findtext("error")
-        if error:
-            raise ValueError(error.strip())
-
-        games: list[dict] = []
-        for node in root.findall("./games/game"):
-            appid = node.findtext("appID")
-            name = node.findtext("name")
-            if not appid or not name:
-                continue
-
-            hours = node.findtext("hoursOnRecord")
-            last_played = node.findtext("lastPlayed")
-
-            games.append(
-                {
-                    "appid": appid,
-                    "name": name.strip(),
-                    "playtime_forever": int(float(hours or 0) * 60),
-                    "rtime_last_played": (
-                        int(last_played) if last_played and last_played.isdigit() else None
-                    ),
-                }
-            )
-
-        if games:
-            return {"games": games}
+        diagnosis = _steam_page_failure(response, "legacy XML endpoint")
+        if diagnosis:
+            failures.append(diagnosis)
+        else:
+            root = _parse_steam_xml(response.text)
+            error = root.findtext("error")
+            if error:
+                failures.append(f"Steam XML endpoint reported: {error.strip()}")
+            else:
+                games: list[dict] = []
+                for node in root.findall("./games/game"):
+                    appid = node.findtext("appID")
+                    name = node.findtext("name")
+                    if not appid or not name:
+                        continue
+                    hours = node.findtext("hoursOnRecord")
+                    last_played = node.findtext("lastPlayed")
+                    try:
+                        playtime = int(float(hours or 0) * 60)
+                    except (TypeError, ValueError):
+                        playtime = 0
+                    games.append({
+                        "appid": appid,
+                        "name": name.strip(),
+                        "playtime_forever": playtime,
+                        "rtime_last_played": int(last_played) if last_played and last_played.isdigit() else None,
+                    })
+                if games:
+                    return {"games": games}
+                failures.append(
+                    f"Steam XML endpoint returned HTTP {response.status_code} but contained no parseable games "
+                    f"(content-type: {response.headers.get('content-type', 'unknown')})."
+                )
 
         html_response = await client.get(html_url)
         html_response.raise_for_status()
-        games = _parse_steam_games_html(html_response.text)
-        if games:
-            return {"games": games}
+        diagnosis = _steam_page_failure(html_response, "games page")
+        if diagnosis:
+            failures.append(diagnosis)
+        else:
+            games = _parse_steam_games_html(html_response.text)
+            if games:
+                return {"games": games}
+            failures.append(
+                f"Steam games page returned HTTP {html_response.status_code} but neither supported embedded "
+                "payload (g_rgGameData or rgGames) contained parseable games "
+                f"(content-type: {html_response.headers.get('content-type', 'unknown')})."
+            )
 
-    raise ValueError(
-        "Steam returned no games. Make sure your Steam profile and game details are public."
-    )
+    raise ValueError("Steam library import failed. " + " ".join(failures))
 
 
 def utc_from_timestamp(value: int | None) -> datetime | None:
