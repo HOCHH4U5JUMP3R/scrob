@@ -10,6 +10,8 @@ import re
 
 import httpx
 
+from core.config import settings
+
 STEAM_OPENID_URL = "https://steamcommunity.com/openid/login"
 STEAM_COMMUNITY_URL = "https://steamcommunity.com"
 
@@ -205,6 +207,49 @@ async def fetch_library(steam_id: str) -> dict:
     }
     failures: list[str] = []
 
+    # OpenID proves account identity; it does not authorize Steam Web API calls.
+    # Prefer the official API when the operator has configured an API key.
+    api_key = (settings.steam_api_key or "").strip()
+    if api_key:
+        async with httpx.AsyncClient(timeout=45) as client:
+            api_response = await client.get(
+                "https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/",
+                params={
+                    "key": api_key,
+                    "steamid": steam_id,
+                    "include_appinfo": 1,
+                    "include_played_free_games": 1,
+                },
+            )
+            api_response.raise_for_status()
+            try:
+                payload = api_response.json()
+            except ValueError as exc:
+                raise ValueError("Steam Web API returned invalid JSON. Check STEAM_API_KEY.") from exc
+            response_data = payload.get("response") if isinstance(payload, dict) else None
+            if not isinstance(response_data, dict) or "games" not in response_data:
+                raise ValueError(
+                    "Steam Web API did not return a game list. Check STEAM_API_KEY and confirm game details are public."
+                )
+            api_games = []
+            for game in response_data.get("games") or []:
+                if not isinstance(game, dict) or not game.get("appid"):
+                    continue
+                api_games.append({
+                    "appid": str(game["appid"]),
+                    "name": str(game.get("name") or f"Steam App {game['appid']}").strip(),
+                    "playtime_forever": int(game.get("playtime_forever") or 0),
+                    "rtime_last_played": None,
+                })
+            if api_games:
+                return {"games": api_games}
+            if int(response_data.get("game_count") or 0) == 0:
+                raise ValueError(
+                    "Steam Web API returned an empty library. Confirm this account owns games "
+                    "and Game details are public."
+                )
+            failures.append("Steam Web API returned no parseable game entries.")
+
     async with httpx.AsyncClient(timeout=90, follow_redirects=True, headers=headers) as client:
         response = await client.get(xml_url)
         response.raise_for_status()
@@ -257,7 +302,14 @@ async def fetch_library(steam_id: str) -> dict:
                 f"(content-type: {html_response.headers.get('content-type', 'unknown')})."
             )
 
-    raise ValueError("Steam library import failed. " + " ".join(failures))
+    detail = " ".join(failures)
+    if not api_key and any("login page" in failure for failure in failures):
+        detail += (
+            " Steam no longer serves the legacy public library to this request. "
+            "Configure STEAM_API_KEY in Scrob's backend environment to use the Steam Web API; "
+            "Steam OpenID login alone does not authorize library API access."
+        )
+    raise ValueError("Steam library import failed. " + detail)
 
 
 def utc_from_timestamp(value: int | None) -> datetime | None:
