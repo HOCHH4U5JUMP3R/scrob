@@ -1,0 +1,35 @@
+name: Steam and manual PC regression tests
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - backend/core/steam.py
+      - backend/routers/games.py
+      - backend/tests/test_steam.py
+      - .github/workflows/steam-manual-pc-tests.yml
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}/backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: python -m pip install pytest httpx
+
+      - name: Compile changed backend modules
+        run: python -m compileall -q backend/core/steam.py backend/routers/games.py
+
+      - name: Run Steam parser and response diagnostic tests
+        working-directory: backend
+        run: pytest -q tests/test_steam.py
