@@ -126,12 +126,25 @@ const sections = PLATFORM_SECTIONS
       </div>
     </div>
 
-    <form id="manual-game-form" class="mb-8 rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4 sm:p-5 flex flex-col sm:flex-row gap-3">
-      <label class="flex-1 text-xs font-bold text-zinc-400">PC-Spiel manuell hinzufügen
+    <form id="manual-game-form" class="mb-8 rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4 sm:p-5 grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <label class="sm:col-span-2 text-xs font-bold text-zinc-400">PC-Spiel manuell hinzufügen
         <input id="manual-game-title" maxlength="500" required placeholder="Spieltitel (z. B. GTA V über Rockstar Launcher)" class="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 p-3 text-sm text-white placeholder:text-zinc-600" />
       </label>
-      <button id="manual-game-submit" type="submit" class="sm:self-end rounded-lg bg-sky-600 hover:bg-sky-500 px-5 py-3 text-sm font-bold text-white">PC-Spiel hinzufügen</button>
-      <p id="manual-game-message" class="text-xs text-zinc-400 sm:self-end" role="status" aria-live="polite"></p>
+      <label class="text-xs font-bold text-zinc-400">Cover (JPG, PNG, WebP · max. 5 MB)
+        <input id="manual-game-cover" type="file" accept="image/jpeg,image/png,image/webp" class="mt-1 block w-full text-xs text-zinc-300 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-800 file:px-3 file:py-2 file:text-zinc-200" />
+      </label>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="text-xs font-bold text-zinc-400">Erfolge freigeschaltet
+          <input id="manual-game-achievements-earned" type="number" min="0" max="1000000" step="1" value="0" required class="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 p-3 text-sm text-white" />
+        </label>
+        <label class="text-xs font-bold text-zinc-400">Erfolge gesamt
+          <input id="manual-game-achievements-defined" type="number" min="0" max="1000000" step="1" value="0" required class="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 p-3 text-sm text-white" />
+        </label>
+      </div>
+      <div class="sm:col-span-2 lg:col-span-4 flex items-center justify-between gap-3 flex-wrap">
+        <p id="manual-game-message" class="text-xs text-zinc-400" role="status" aria-live="polite"></p>
+        <button id="manual-game-submit" type="submit" class="rounded-lg bg-sky-600 hover:bg-sky-500 px-5 py-3 text-sm font-bold text-white">PC-Spiel hinzufügen</button>
+      </div>
     </form>
 
     {games.length === 0 ? (
@@ -181,17 +194,35 @@ const sections = PLATFORM_SECTIONS
     const titleInput = document.getElementById("manual-game-title");
     const submit = document.getElementById("manual-game-submit");
     const message = document.getElementById("manual-game-message");
+    const coverInput = document.getElementById("manual-game-cover");
+    const achievementsEarned = document.getElementById("manual-game-achievements-earned");
+    const achievementsDefined = document.getElementById("manual-game-achievements-defined");
+    const readCover = (file) => new Promise((resolve, reject) => {
+      if (!file) return resolve(null);
+      if (file.size > 5 * 1024 * 1024) return reject(new Error("Das Cover darf maximal 5 MB groß sein."));
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("Das Cover konnte nicht gelesen werden."));
+      reader.readAsDataURL(file);
+    });
     form?.addEventListener("submit", async (event) => {
       event.preventDefault();
       const title = titleInput?.value?.trim();
       if (!title) return;
+      const earned = Number(achievementsEarned?.value ?? 0);
+      const defined = Number(achievementsDefined?.value ?? 0);
+      if (!Number.isInteger(earned) || !Number.isInteger(defined) || earned < 0 || defined < 0 || earned > defined) {
+        if (message) message.textContent = "Bitte gültige Erfolge eingeben; freigeschaltet darf nicht größer als gesamt sein.";
+        return;
+      }
       submit.disabled = true;
       if (message) message.textContent = "Speichere …";
       try {
+        const coverData = await readCover(coverInput?.files?.[0] ?? null);
         const response = await fetch("/api/proxy/games/manual", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title }),
+          body: JSON.stringify({ title, cover_data: coverData, achievements_earned: earned, achievements_defined: defined }),
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.detail || "PC-Spiel konnte nicht hinzugefügt werden.");
