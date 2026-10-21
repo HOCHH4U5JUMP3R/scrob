@@ -172,6 +172,81 @@ async def create_manual_game(
     return {"id": game.id, "title": game.title, "platform": "PC", "url": f"/game/{game.id}"}
 
 
+@router.patch("/{game_id}/manual")
+async def update_manual_pc_game(
+    game_id: int,
+    payload: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user_or_api_key),
+):
+    """Update a manually tracked PC game's cover and achievement counts."""
+    game = await db.get(Game, game_id)
+    if game is None:
+        raise HTTPException(status_code=404, detail="Spiel nicht gefunden")
+    result = await db.execute(select(GameUserStats).where(
+        GameUserStats.user_id == current_user.id,
+        GameUserStats.game_id == game_id,
+        GameUserStats.platform == "PC",
+    ))
+    stats = result.scalar_one_or_none()
+    if stats is None:
+        raise HTTPException(status_code=404, detail="Kein manuell verwaltetes PC-Spiel gefunden.")
+
+    if "achievements_defined" in payload or "achievements_earned" in payload:
+        def count_value(key: str, current: int) -> int:
+            raw = payload.get(key, current)
+            try:
+                value = int(raw or 0)
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=422, detail=f"{key} muss eine ganze Zahl sein.")
+            if value < 0 or value > 1000000:
+                raise HTTPException(status_code=422, detail=f"{key} liegt außerhalb des erlaubten Bereichs.")
+            return value
+        current_earned = int((stats.trophies_earned or {}).get("achievements", 0))
+        current_defined = int((stats.trophies_defined or {}).get("achievements", 0))
+        earned = count_value("achievements_earned", current_earned)
+        defined = count_value("achievements_defined", current_defined)
+        if earned > defined:
+            raise HTTPException(status_code=422, detail="Freigeschaltete Erfolge dürfen nicht größer als die Gesamtzahl sein.")
+        stats.trophies_earned = {"achievements": earned}
+        stats.trophies_defined = {"achievements": defined}
+        stats.trophy_progress = round(earned / defined * 100) if defined else 0
+
+    cover_data = payload.get("cover_data")
+    if cover_data:
+        if not isinstance(cover_data, str) or "," not in cover_data:
+            raise HTTPException(status_code=422, detail="Das Cover konnte nicht gelesen werden.")
+        header, encoded = cover_data.split(",", 1)
+        extension = {
+            "data:image/jpeg;base64": ".jpg",
+            "data:image/png;base64": ".png",
+            "data:image/webp;base64": ".webp",
+        }.get(header.lower())
+        if not extension:
+            raise HTTPException(status_code=422, detail="Bitte ein JPG-, PNG- oder WebP-Cover auswählen.")
+        try:
+            image_bytes = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError):
+            raise HTTPException(status_code=422, detail="Die Cover-Datei ist ungültig.")
+        if not image_bytes or len(image_bytes) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Das Cover darf maximal 5 MB groß sein.")
+        signatures = {
+            ".jpg": image_bytes.startswith(b"\\xff\\xd8\\xff"),
+            ".png": image_bytes.startswith(b"\\x89PNG\\r\\n\\x1a\\n"),
+            ".webp": len(image_bytes) >= 12 and image_bytes[:4] == b"RIFF" and image_bytes[8:12] == b"WEBP",
+        }
+        if not signatures[extension]:
+            raise HTTPException(status_code=422, detail="Der Dateiinhalt passt nicht zum Bildformat.")
+        cover_dir = settings.data_dir / "game_covers"
+        cover_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"game-{game.id}-{uuid.uuid4().hex}{extension}"
+        (cover_dir / filename).write_bytes(image_bytes)
+        game.cover_path = f"/api/proxy/games/covers/{filename}"
+
+    await db.commit()
+    return {"id": game.id, "title": game.title, "cover_path": game.cover_path, "trophy_progress": stats.trophy_progress}
+
+
 @router.get("/covers/{filename}")
 async def get_manual_game_cover(filename: str):
     if not filename.startswith("game-") or "/" in filename or "\\" in filename or ".." in filename:
