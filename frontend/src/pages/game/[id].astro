@@ -123,6 +123,29 @@ const latestPlayed = stats
           </div>
         </div>
 
+        {pcStats.length > 0 && (
+          <section class="mt-8 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5">
+            <h2 class="text-lg font-black text-white">PC-Spiel bearbeiten</h2>
+            <p class="text-xs text-zinc-500 mt-1">Cover und Erfolge manuell pflegen</p>
+            <form id="manual-pc-game-form" data-game-id={id} class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
+              <label class="text-xs font-bold text-zinc-400">Neues Cover (JPG, PNG, WebP · max. 5 MB)
+                <input id="manual-pc-cover" type="file" accept="image/jpeg,image/png,image/webp" class="mt-1 block w-full text-xs text-zinc-300 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-800 file:px-3 file:py-2 file:text-zinc-200" />
+              </label>
+              <label class="text-xs font-bold text-zinc-400">Erfolge freigeschaltet
+                <input id="manual-pc-achievements-earned" type="number" min="0" max="1000000" step="1" value={pcAchievementsEarned} required class="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 p-3 text-sm text-white" />
+              </label>
+              <label class="text-xs font-bold text-zinc-400">Erfolge gesamt
+                <input id="manual-pc-achievements-defined" type="number" min="0" max="1000000" step="1" value={pcAchievementsDefined} required class="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 p-3 text-sm text-white" />
+              </label>
+              <div class="sm:col-span-2 lg:col-span-3 flex items-center justify-between gap-3 flex-wrap">
+                <p id="manual-pc-game-message" class="text-xs text-zinc-400" role="status" aria-live="polite"></p>
+                <button id="manual-pc-game-submit" type="submit" class="rounded-lg bg-sky-600 hover:bg-sky-500 px-5 py-3 text-sm font-bold text-white">Änderungen speichern</button>
+              </div>
+            </form>
+          </section>
+        )}
+        </div>
+
         {stats.length > 0 && (
           <section class="mt-12">
             <div class="flex items-end justify-between gap-4 mb-4">
@@ -289,6 +312,48 @@ const latestPlayed = stats
 </Base>
 
 <script>
+  const manualPcForm = document.getElementById("manual-pc-game-form");
+  const manualPcMessage = document.getElementById("manual-pc-game-message");
+  const manualPcSubmit = document.getElementById("manual-pc-game-submit");
+  const manualPcCover = document.getElementById("manual-pc-cover");
+  const manualPcEarned = document.getElementById("manual-pc-achievements-earned");
+  const manualPcDefined = document.getElementById("manual-pc-achievements-defined");
+  const readManualPcCover = (file) => new Promise((resolve, reject) => {
+    if (!file) return resolve(null);
+    if (file.size > 5 * 1024 * 1024) return reject(new Error("Das Cover darf maximal 5 MB groß sein."));
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("Das Cover konnte nicht gelesen werden."));
+    reader.readAsDataURL(file);
+  });
+  manualPcForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const earned = Number(manualPcEarned?.value ?? 0);
+    const defined = Number(manualPcDefined?.value ?? 0);
+    if (!Number.isInteger(earned) || !Number.isInteger(defined) || earned < 0 || defined < 0 || earned > defined) {
+      if (manualPcMessage) manualPcMessage.textContent = "Bitte gültige Erfolge eingeben; freigeschaltet darf nicht größer als gesamt sein.";
+      return;
+    }
+    if (manualPcSubmit) manualPcSubmit.disabled = true;
+    if (manualPcMessage) manualPcMessage.textContent = "Speichere …";
+    try {
+      const coverData = await readManualPcCover(manualPcCover?.files?.[0] ?? null);
+      const response = await fetch("/api/proxy/games/" + encodeURIComponent(manualPcForm.dataset.gameId || "") + "/manual", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cover_data: coverData, achievements_earned: earned, achievements_defined: defined }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "PC-Spiel konnte nicht aktualisiert werden.");
+      if (manualPcMessage) manualPcMessage.textContent = "Gespeichert.";
+      location.reload();
+    } catch (error) {
+      if (manualPcMessage) manualPcMessage.textContent = error instanceof Error ? error.message : "Speichern fehlgeschlagen.";
+    } finally {
+      if (manualPcSubmit) manualPcSubmit.disabled = false;
+    }
+  });
+
   const activityForm = document.getElementById("game-activity-form");
   const activityMessage = document.getElementById("game-activity-message");
   const activityPlatform = document.getElementById("activity-platform");
