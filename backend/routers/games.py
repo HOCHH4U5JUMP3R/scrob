@@ -231,8 +231,8 @@ async def update_manual_pc_game(
         if not image_bytes or len(image_bytes) > 5 * 1024 * 1024:
             raise HTTPException(status_code=413, detail="Das Cover darf maximal 5 MB groß sein.")
         signatures = {
-            ".jpg": image_bytes.startswith(b"\\xff\\xd8\\xff"),
-            ".png": image_bytes.startswith(b"\\x89PNG\\r\\n\\x1a\\n"),
+            ".jpg": image_bytes.startswith(b"\xff\xd8\xff"),
+            ".png": image_bytes.startswith(b"\x89PNG\r\n\x1a\n"),
             ".webp": len(image_bytes) >= 12 and image_bytes[:4] == b"RIFF" and image_bytes[8:12] == b"WEBP",
         }
         if not signatures[extension]:
