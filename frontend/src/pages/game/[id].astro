@@ -124,24 +124,33 @@ const latestPlayed = stats
         </div>
 
         {pcStats.length > 0 && (
-          <section class="mt-8 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5">
-            <h2 class="text-lg font-black text-white">PC-Spiel bearbeiten</h2>
-            <p class="text-xs text-zinc-500 mt-1">Cover und Erfolge manuell pflegen</p>
-            <form id="manual-pc-game-form" data-game-id={id} class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
-              <label class="text-xs font-bold text-zinc-400">Neues Cover (JPG, PNG, WebP · max. 5 MB)
-                <input id="manual-pc-cover" type="file" accept="image/jpeg,image/png,image/webp" class="mt-1 block w-full text-xs text-zinc-300 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-800 file:px-3 file:py-2 file:text-zinc-200" />
-              </label>
-              <label class="text-xs font-bold text-zinc-400">Erfolge freigeschaltet
-                <input id="manual-pc-achievements-earned" type="number" min="0" max="1000000" step="1" value={pcAchievementsEarned} required class="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 p-3 text-sm text-white" />
-              </label>
-              <label class="text-xs font-bold text-zinc-400">Erfolge gesamt
-                <input id="manual-pc-achievements-defined" type="number" min="0" max="1000000" step="1" value={pcAchievementsDefined} required class="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 p-3 text-sm text-white" />
-              </label>
-              <div class="sm:col-span-2 lg:col-span-3 flex items-center justify-between gap-3 flex-wrap">
-                <p id="manual-pc-game-message" class="text-xs text-zinc-400" role="status" aria-live="polite"></p>
-                <button id="manual-pc-game-submit" type="submit" class="rounded-lg bg-sky-600 hover:bg-sky-500 px-5 py-3 text-sm font-bold text-white">Änderungen speichern</button>
+          <section class="mt-8">
+            <button id="toggle-manual-pc-edit" type="button" aria-expanded="false" aria-controls="manual-pc-edit-panel" class="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/80 hover:bg-zinc-800 px-4 py-3 text-sm font-bold text-zinc-300 hover:text-white transition">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
+              Spiel bearbeiten
+              <span id="manual-pc-edit-chevron" aria-hidden="true">▾</span>
+            </button>
+            <div id="manual-pc-edit-panel" class="hidden mt-3">
+              <div class="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5">
+                <h2 class="text-lg font-black text-white">Cover und Erfolge bearbeiten</h2>
+                <p class="text-xs text-zinc-500 mt-1">Die Änderungen gelten für dieses Spiel in deiner Bibliothek.</p>
+                <form id="manual-pc-game-form" data-game-id={id} class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-5">
+                  <label class="text-xs font-bold text-zinc-400">Neues Cover <span class="font-normal text-zinc-600">JPG, PNG, WebP · max. 5 MB</span>
+                    <input id="manual-pc-cover" type="file" accept="image/jpeg,image/png,image/webp" class="mt-2 block w-full rounded-xl border border-zinc-700 bg-zinc-950/80 p-2.5 text-xs text-zinc-300 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-800 file:px-3 file:py-2 file:font-bold file:text-zinc-200" />
+                  </label>
+                  <label class="text-xs font-bold text-zinc-400">Erfolge freigeschaltet
+                    <input id="manual-pc-achievements-earned" type="number" min="0" max="1000000" step="1" value={pcAchievementsEarned} required class="mt-2 w-full rounded-xl border border-zinc-700 bg-zinc-950 p-3 text-sm text-white focus:border-sky-500 focus:outline-none" />
+                  </label>
+                  <label class="text-xs font-bold text-zinc-400">Erfolge gesamt
+                    <input id="manual-pc-achievements-defined" type="number" min="0" max="1000000" step="1" value={pcAchievementsDefined} required class="mt-2 w-full rounded-xl border border-zinc-700 bg-zinc-950 p-3 text-sm text-white focus:border-sky-500 focus:outline-none" />
+                  </label>
+                  <div class="sm:col-span-2 lg:col-span-3 flex items-center justify-between gap-3 flex-wrap border-t border-zinc-800 pt-4">
+                    <p id="manual-pc-game-message" class="text-xs text-zinc-400" role="status" aria-live="polite"></p>
+                    <button id="manual-pc-game-submit" type="submit" class="rounded-xl bg-sky-600 hover:bg-sky-500 px-5 py-3 text-sm font-black text-white transition disabled:opacity-50">Änderungen speichern</button>
+                  </div>
+                </form>
               </div>
-            </form>
+            </div>
           </section>
         )}
         </div>
@@ -312,6 +321,16 @@ const latestPlayed = stats
 </Base>
 
 <script>
+  const manualPcEditToggle = document.getElementById("toggle-manual-pc-edit");
+  const manualPcEditPanel = document.getElementById("manual-pc-edit-panel");
+  const manualPcEditChevron = document.getElementById("manual-pc-edit-chevron");
+  manualPcEditToggle?.addEventListener("click", () => {
+    const isOpen = manualPcEditToggle.getAttribute("aria-expanded") === "true";
+    manualPcEditToggle.setAttribute("aria-expanded", String(!isOpen));
+    manualPcEditPanel?.classList.toggle("hidden", isOpen);
+    if (manualPcEditChevron) manualPcEditChevron.textContent = isOpen ? "▾" : "▴";
+  });
+
   const manualPcForm = document.getElementById("manual-pc-game-form");
   const manualPcMessage = document.getElementById("manual-pc-game-message");
   const manualPcSubmit = document.getElementById("manual-pc-game-submit");
