@@ -60,6 +60,18 @@ from core.translations import (
 
 router = APIRouter()
 
+def _rounded_whole_star_rating(ratings: list[float | int | None]) -> float | None:
+    """Average 0–10 ratings and round to a whole 0–5 star, stored on a 0–10 scale."""
+    values = [float(value) for value in ratings if value is not None]
+    if not values:
+        return None
+    average = sum(values) / len(values)
+    # One whole star is two points on Scrob's 0–10 rating scale. Use half-up
+    # rounding rather than Python's banker's rounding for exact half-star ties.
+    return float(min(10, max(0, int((average / 2) + 0.5) * 2)))
+
+
+
 
 def _apply_local_artwork_overrides(show: ShowModel | None, show_data: dict) -> None:
     """Keep locally selected series and season posters in TVDB views."""
@@ -977,6 +989,28 @@ async def get_show(
                 for ep_list in seasons.values():
                     apply_media_translations(ep_list, ep_trans)
 
+        # Derive missing season ratings from the user's rated episodes, then
+        # derive a missing show rating from those season ratings. Explicit
+        # ratings always take precedence over the automatic fallback.
+        for season_key, episode_items in seasons.items():
+            try:
+                season_number_value = int(season_key.removeprefix("season_"))
+            except (TypeError, ValueError):
+                continue
+            season_state = season_states.setdefault(season_number_value, {})
+            if season_state.get("user_rating") is None:
+                season_state["user_rating"] = _rounded_whole_star_rating(
+                    [episode.get("user_rating") for episode in episode_items]
+                )
+        if state_item.get("user_rating") is None:
+            state_item["user_rating"] = _rounded_whole_star_rating(
+                [
+                    state.get("user_rating")
+                    for number, state in season_states.items()
+                    if number != 0
+                ]
+            )
+
         rewatch_info = None
         if active_rewatch:
             progress_ids = await get_rewatch_progress_media_ids(db, active_rewatch.id)
@@ -1570,6 +1604,11 @@ async def get_show_season(
             season_in_library = collected_in_season > 0
             aired_denom = total_aired_in_season if total_aired_in_season > 0 else total_in_season
             season_collection_pct = min(100, int((collected_in_season / aired_denom) * 100)) if aired_denom > 0 else 0
+
+            if season_user_rating is None:
+                season_user_rating = _rounded_whole_star_rating(
+                    [episode.get("user_rating") for episode in episodes]
+                )
 
             # Count unique episodes in this season that have been watched
             # episodes list contains "watched": True/False for each episode.
@@ -2747,6 +2786,11 @@ async def get_tvdb_season(
             "user_rating": episode_ratings.get(local_episode.id) if local_episode else None,
             "in_lists": tvdb_episode_in_lists.get(ep_tmdb_id, []) if ep_tmdb_id else [],
         })
+
+    if season_user_rating is None:
+        season_user_rating = _rounded_whole_star_rating(
+            [episode.get("user_rating") for episode in enriched_eps]
+        )
 
     total_eps = len(eps)
     season_in_library = bool(collected_ep_ids)
