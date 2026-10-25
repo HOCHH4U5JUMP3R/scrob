@@ -992,7 +992,7 @@ async def get_show(
         # ratings always take precedence over the automatic fallback.
         for season_key, episode_items in seasons.items():
             try:
-                season_number_value = int(season_key.removeprefix("season_"))
+                season_number_value = int(str(season_key).removeprefix("season_"))
             except (TypeError, ValueError):
                 continue
             season_state = season_states.setdefault(season_number_value, {})
