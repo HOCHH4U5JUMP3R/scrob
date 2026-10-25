@@ -86,6 +86,135 @@ def format_rating(rating: Rating, media: Media) -> dict:
     }
 
 
+async def _recalculate_derived_series_ratings(
+    db: AsyncSession,
+    user_id: int,
+    episode_media_id: int,
+) -> tuple[dict[tuple[int, int | None], float], set[tuple[int, int | None]]]:
+    """Persist whole-number season and series ratings derived from episode ratings."""
+    from models.show import Show
+
+    episode_result = await db.execute(select(Media).where(Media.id == episode_media_id))
+    episode_media = episode_result.scalar_one_or_none()
+    if not episode_media or not episode_media.show_id:
+        return {}, set()
+
+    show_result = await db.execute(select(Show).where(Show.id == episode_media.show_id))
+    show = show_result.scalar_one_or_none()
+    if not show or not show.tmdb_id:
+        return {}, set()
+
+    series_result = await db.execute(
+        select(Media)
+        .where(Media.tmdb_id == show.tmdb_id, Media.media_type == MediaType.series)
+        .order_by(Media.id)
+    )
+    series_media = series_result.scalars().first()
+    if not series_media:
+        return {}, set()
+
+    episode_ratings_result = await db.execute(
+        select(Media.season_number, Rating.rating)
+        .join(Rating, Rating.media_id == Media.id)
+        .where(
+            Media.show_id == show.id,
+            Media.media_type == MediaType.episode,
+            Media.season_number.isnot(None),
+            Media.season_number != 0,
+            Rating.user_id == user_id,
+            Rating.rating.isnot(None),
+        )
+    )
+    by_season: dict[int, list[float]] = {}
+    for season_number, value in episode_ratings_result.all():
+        if season_number is not None and value is not None:
+            by_season.setdefault(int(season_number), []).append(float(value))
+
+    def whole_rating(values: list[float]) -> float:
+        average = sum(values) / len(values)
+        return float(min(10, max(1, int(average + 0.5))))
+
+    existing_result = await db.execute(
+        select(Rating).where(
+            Rating.media_id == series_media.id,
+            Rating.user_id == user_id,
+            Rating.episode_order.is_(None),
+        )
+    )
+    existing = {row.season_number: row for row in existing_result.scalars().all()}
+    changes: dict[tuple[int, int | None], float] = {}
+    removed: set[tuple[int, int | None]] = set()
+    derived_seasons: list[float] = []
+
+    for season_number in sorted(set(by_season) | {n for n in existing if n is not None}):
+        row = existing.get(season_number)
+        values = by_season.get(season_number, [])
+        if not values:
+            if row is not None:
+                await db.delete(row)
+                removed.add((series_media.id, season_number))
+            continue
+        rating_value = whole_rating(values)
+        derived_seasons.append(rating_value)
+        if row is None:
+            row = Rating(
+                media_id=series_media.id,
+                user_id=user_id,
+                season_number=season_number,
+                episode_order=None,
+                rating=rating_value,
+            )
+            db.add(row)
+            changes[(series_media.id, season_number)] = rating_value
+        elif row.rating != rating_value:
+            row.rating = rating_value
+            row.rated_at = datetime.utcnow()
+            changes[(series_media.id, season_number)] = rating_value
+
+    series_row = existing.get(None)
+    if derived_seasons:
+        series_rating = whole_rating(derived_seasons)
+        if series_row is None:
+            series_row = Rating(
+                media_id=series_media.id,
+                user_id=user_id,
+                season_number=None,
+                episode_order=None,
+                rating=series_rating,
+            )
+            db.add(series_row)
+            changes[(series_media.id, None)] = series_rating
+        elif series_row.rating != series_rating:
+            series_row.rating = series_rating
+            series_row.rated_at = datetime.utcnow()
+            changes[(series_media.id, None)] = series_rating
+    elif series_row is not None:
+        await db.delete(series_row)
+        removed.add((series_media.id, None))
+
+    await db.commit()
+    return changes, removed
+
+
+async def _sync_derived_rating_changes(
+    db: AsyncSession,
+    user_id: int,
+    changes: dict[tuple[int, int | None], float],
+    removed: set[tuple[int, int | None]],
+) -> None:
+    if not changes and not removed:
+        return
+    settings_result = await db.execute(
+        select(UserSettings).where(UserSettings.user_id == user_id)
+    )
+    settings = settings_result.scalar_one_or_none()
+    from routers.sync import _fan_out_changes_to_other_connections
+
+    await _fan_out_changes_to_other_connections(
+        db, user_id, None, set(), changes, settings=settings, removed_ratings=removed
+    )
+
+
 @router.delete("/all")
 async def clear_all_ratings(
     db: AsyncSession = Depends(get_db),
@@ -183,6 +312,15 @@ async def submit_rating(
         settings=settings,
     )
 
+    if media_type == MediaType.episode:
+        derived_changes, derived_removed = await _recalculate_derived_series_ratings(
+            db, current_user.id, media.id
+        )
+        await _sync_derived_rating_changes(
+            db, current_user.id, derived_changes, derived_removed
+        )
+
+
     return format_rating(rating, media)
 
 
@@ -273,5 +411,14 @@ async def delete_rating(
         settings=settings,
         removed_ratings={(media.id, effective_season)},
     )
+
+    if mt == MediaType.episode:
+        derived_changes, derived_removed = await _recalculate_derived_series_ratings(
+            db, current_user.id, media.id
+        )
+        await _sync_derived_rating_changes(
+            db, current_user.id, derived_changes, derived_removed
+        )
+
 
     return {"status": "deleted"}

@@ -60,6 +60,16 @@ from core.translations import (
 
 router = APIRouter()
 
+def _rounded_whole_star_rating(ratings: list[float | int | None]) -> float | None:
+    """Average 1–10 ratings and round half-up to a whole-number rating."""
+    values = [float(value) for value in ratings if value is not None]
+    if not values:
+        return None
+    average = sum(values) / len(values)
+    return float(min(10, max(1, int(average + 0.5))))
+
+
+
 
 def _apply_local_artwork_overrides(show: ShowModel | None, show_data: dict) -> None:
     """Keep locally selected series and season posters in TVDB views."""
@@ -880,6 +890,32 @@ async def get_show(
             select(Media).where(Media.tmdb_id == series_tmdb_id, Media.media_type == MediaType.series)
         )
         show_media = show_media_q.scalar_one_or_none()
+        if show_media:
+            # Reconcile any existing manual series/season values to the
+            # episode-derived ratings on first view after this feature ships.
+            episode_id_q = await db.execute(
+                select(Media.id)
+                .where(
+                    Media.show_id == show.id,
+                    Media.media_type == MediaType.episode,
+                    Media.season_number.isnot(None),
+                    Media.season_number != 0,
+                )
+                .order_by(Media.id)
+                .limit(1)
+            )
+            episode_media_id = episode_id_q.scalar_one_or_none()
+            if episode_media_id is not None:
+                from routers.ratings import (
+                    _recalculate_derived_series_ratings,
+                    _sync_derived_rating_changes,
+                )
+                derived_changes, derived_removed = await _recalculate_derived_series_ratings(
+                    db, effective_user_id, episode_media_id
+                )
+                await _sync_derived_rating_changes(
+                    db, effective_user_id, derived_changes, derived_removed
+                )
         if show_media and not show_media.adult and (tmdb_extra or {}).get("adult", False):
             show_media.adult = True
             await db.commit()
@@ -891,7 +927,7 @@ async def get_show(
                     Rating.media_id == show_media.id,
                     Rating.user_id == effective_user_id,
                     Rating.season_number.isnot(None),
-                    Rating.episode_order.is_(None),
+                    Rating.episode_order == ("tvdb" if selected_episode_order == "tvdb" else None),
                 )
                 .group_by(Rating.season_number)
             )
@@ -976,6 +1012,28 @@ async def get_show(
                 ep_trans = await get_media_translations(db, all_ep_ids, metadata_lang)
                 for ep_list in seasons.values():
                     apply_media_translations(ep_list, ep_trans)
+
+        # Derive missing season ratings from the user's rated episodes, then
+        # derive a missing show rating from those season ratings. Explicit
+        # ratings always take precedence over the automatic fallback.
+        for season_key, episode_items in seasons.items():
+            try:
+                season_number_value = int(season_key.removeprefix("season_"))
+            except (TypeError, ValueError):
+                continue
+            season_state = season_states.setdefault(season_number_value, {})
+            if season_state.get("user_rating") is None:
+                season_state["user_rating"] = _rounded_whole_star_rating(
+                    [episode.get("user_rating") for episode in episode_items]
+                )
+        if state_item.get("user_rating") is None:
+            state_item["user_rating"] = _rounded_whole_star_rating(
+                [
+                    state.get("user_rating")
+                    for number, state in season_states.items()
+                    if number != 0
+                ]
+            )
 
         rewatch_info = None
         if active_rewatch:
@@ -1596,6 +1654,12 @@ async def get_show_season(
                 )
                 season_user_rating = rating_q.scalar_one_or_none()
 
+            if season_user_rating is None:
+                season_user_rating = _rounded_whole_star_rating(
+                    [episode.get("user_rating") for episode in episodes]
+                )
+
+            if show_media:
                 season_lists_q = await db.execute(
                     select(ListItem.list_id)
                     .join(UserList, UserList.id == ListItem.list_id)
@@ -2747,6 +2811,11 @@ async def get_tvdb_season(
             "user_rating": episode_ratings.get(local_episode.id) if local_episode else None,
             "in_lists": tvdb_episode_in_lists.get(ep_tmdb_id, []) if ep_tmdb_id else [],
         })
+
+    if season_user_rating is None:
+        season_user_rating = _rounded_whole_star_rating(
+            [episode.get("user_rating") for episode in enriched_eps]
+        )
 
     total_eps = len(eps)
     season_in_library = bool(collected_ep_ids)
