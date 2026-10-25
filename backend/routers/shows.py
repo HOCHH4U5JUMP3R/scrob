@@ -61,14 +61,12 @@ from core.translations import (
 router = APIRouter()
 
 def _rounded_whole_star_rating(ratings: list[float | int | None]) -> float | None:
-    """Average 0–10 ratings and round to a whole 0–5 star, stored on a 0–10 scale."""
+    """Average 1–10 ratings and round half-up to a whole-number rating."""
     values = [float(value) for value in ratings if value is not None]
     if not values:
         return None
     average = sum(values) / len(values)
-    # One whole star is two points on Scrob's 0–10 rating scale. Use half-up
-    # rounding rather than Python's banker's rounding for exact half-star ties.
-    return float(min(10, max(0, int((average / 2) + 0.5) * 2)))
+    return float(min(10, max(1, int(average + 0.5))))
 
 
 
