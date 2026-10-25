@@ -1605,11 +1605,6 @@ async def get_show_season(
             aired_denom = total_aired_in_season if total_aired_in_season > 0 else total_in_season
             season_collection_pct = min(100, int((collected_in_season / aired_denom) * 100)) if aired_denom > 0 else 0
 
-            if season_user_rating is None:
-                season_user_rating = _rounded_whole_star_rating(
-                    [episode.get("user_rating") for episode in episodes]
-                )
-
             # Count unique episodes in this season that have been watched
             # episodes list contains "watched": True/False for each episode.
             watched_count = sum(1 for ep in episodes if ep.get("watched"))
@@ -1635,6 +1630,12 @@ async def get_show_season(
                 )
                 season_user_rating = rating_q.scalar_one_or_none()
 
+            if season_user_rating is None:
+                season_user_rating = _rounded_whole_star_rating(
+                    [episode.get("user_rating") for episode in episodes]
+                )
+
+            if show_media:
                 season_lists_q = await db.execute(
                     select(ListItem.list_id)
                     .join(UserList, UserList.id == ListItem.list_id)
