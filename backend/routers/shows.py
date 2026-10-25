@@ -903,7 +903,7 @@ async def get_show(
                     Rating.media_id == show_media.id,
                     Rating.user_id == effective_user_id,
                     Rating.season_number.isnot(None),
-                    Rating.episode_order.is_(None),
+                    Rating.episode_order == ("tvdb" if selected_episode_order == "tvdb" else None),
                 )
                 .group_by(Rating.season_number)
             )
