@@ -165,10 +165,11 @@ async def _recalculate_derived_series_ratings(
                 rating=rating_value,
             )
             db.add(row)
+            changes[(series_media.id, season_number)] = rating_value
         elif row.rating != rating_value:
             row.rating = rating_value
             row.rated_at = datetime.utcnow()
-        changes[(series_media.id, season_number)] = rating_value
+            changes[(series_media.id, season_number)] = rating_value
 
     series_row = existing.get(None)
     if derived_seasons:
@@ -182,10 +183,11 @@ async def _recalculate_derived_series_ratings(
                 rating=series_rating,
             )
             db.add(series_row)
+            changes[(series_media.id, None)] = series_rating
         elif series_row.rating != series_rating:
             series_row.rating = series_rating
             series_row.rated_at = datetime.utcnow()
-        changes[(series_media.id, None)] = series_rating
+            changes[(series_media.id, None)] = series_rating
     elif series_row is not None:
         await db.delete(series_row)
         removed.add((series_media.id, None))
