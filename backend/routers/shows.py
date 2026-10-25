@@ -416,8 +416,10 @@ async def list_shows(
         )
 
     result = await db.execute(q.limit(page_size).offset(offset))
-    results = [format_show(s) for s in result.scalars().all()]
+    local_shows = result.scalars().all()
+    results = [format_show(s) for s in local_shows]
     await enrich_with_state(db, current_user.id, results)
+
     if lang:
         show_ids = [r["id"] for r in results if r.get("id")]
         translations = await get_show_translations(db, show_ids, lang)
@@ -700,6 +702,24 @@ async def get_show(
             s["season_number"]: s for s in (show.tmdb_data or {}).get("seasons", [])
         }
 
+        # Include episode ratings in the payload so the derived season and
+        # series ratings below can be calculated from actual user ratings.
+        episode_ratings_q = await db.execute(
+            select(Media.season_number, Media.episode_number, func.max(Rating.rating))
+            .join(Rating, Rating.media_id == Media.id)
+            .where(
+                Media.show_id == show.id,
+                Media.media_type == MediaType.episode,
+                Rating.user_id == effective_user_id,
+                Rating.season_number.is_(None),
+            )
+            .group_by(Media.season_number, Media.episode_number)
+        )
+        episode_user_ratings = {
+            (season_number, episode_number): rating
+            for season_number, episode_number, rating in episode_ratings_q.all()
+        }
+
         seasons: dict = {}
         for ep in episodes:
             s_num = ep.season_number or 0
@@ -708,6 +728,9 @@ async def get_show(
             )
             ep_formatted = format_media(ep)
             ep_formatted["poster_path"] = ep.poster_path or season_poster
+            ep_formatted["user_rating"] = episode_user_ratings.get(
+                (ep.season_number, ep.episode_number)
+            )
             seasons.setdefault(s_num, []).append(ep_formatted)
 
         # Fetch networks + recommendations from TMDB if key is available

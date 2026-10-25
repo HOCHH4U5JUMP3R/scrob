@@ -193,6 +193,15 @@ def _attach_episode_order_fields(
             item["tvdb_season_number"] = candidates[0].tvdb_season_number
 
 
+def _rounded_whole_star_rating(ratings: list[float | int | None]) -> float | None:
+    """Average 1–10 ratings and round half-up to a whole-star rating."""
+    values = [float(value) for value in ratings if value is not None]
+    if not values:
+        return None
+    average = sum(values) / len(values)
+    return float(min(10, max(1, int(average + 0.5))))
+
+
 async def enrich_with_state(
     db: AsyncSession,
     user_id: int,
@@ -690,6 +699,68 @@ async def enrich_with_state(
         for tmdb_id, media_type, rating_val in ratings_q.all():
             user_ratings[(tmdb_id, media_type.value)] = rating_val
 
+    # --- Derived series/season ratings ---
+    # Explicit ratings win. Otherwise season ratings are rounded averages of
+    # rated episodes, and a series rating is the rounded average of its rated
+    # seasons. This also supplies ratings to collection/list cards, not just
+    # the detail endpoint.
+    explicit_season_ratings: dict[tuple[int, int], float] = {}
+    episode_ratings: dict[tuple[int, int], list[float]] = {}
+    derived_season_ratings: dict[tuple[int, int], float | None] = {}
+    derived_show_ratings: dict[int, float | None] = {}
+    if show_tmdb_ids:
+        explicit_season_q = await db.execute(
+            select(Media.tmdb_id, Rating.season_number, func.max(Rating.rating))
+            .join(Rating, Rating.media_id == Media.id)
+            .where(
+                Media.tmdb_id.in_(show_tmdb_ids),
+                Media.media_type == MediaType.series,
+                Rating.user_id == user_id,
+                Rating.season_number.isnot(None),
+                Rating.rating.isnot(None),
+            )
+            .group_by(Media.tmdb_id, Rating.season_number)
+        )
+        explicit_season_ratings = {
+            (tmdb_id, season_number): rating_value
+            for tmdb_id, season_number, rating_value in explicit_season_q.all()
+        }
+        episode_rating_q = await db.execute(
+            select(ShowModel.tmdb_id, Media.season_number, Rating.rating)
+            .join(Media, Media.show_id == ShowModel.id)
+            .join(Rating, Rating.media_id == Media.id)
+            .where(
+                ShowModel.tmdb_id.in_(show_tmdb_ids),
+                Media.media_type == MediaType.episode,
+                Media.season_number.isnot(None),
+                Media.season_number != 0,
+                Rating.user_id == user_id,
+                Rating.season_number.is_(None),
+                Rating.rating.isnot(None),
+            )
+        )
+        for tmdb_id, season_number, rating_value in episode_rating_q.all():
+            episode_ratings.setdefault((tmdb_id, season_number), []).append(rating_value)
+
+        for tmdb_id in show_tmdb_ids:
+            season_numbers = {
+                sn for sid, sn in episode_ratings if sid == tmdb_id
+            } | {
+                sn for sid, sn in explicit_season_ratings
+                if sid == tmdb_id and sn != 0
+            }
+            rated_seasons: list[float] = []
+            for season_number in season_numbers:
+                season_rating = explicit_season_ratings.get((tmdb_id, season_number))
+                if season_rating is None:
+                    season_rating = _rounded_whole_star_rating(
+                        episode_ratings.get((tmdb_id, season_number), [])
+                    )
+                derived_season_ratings[(tmdb_id, season_number)] = season_rating
+                if season_rating is not None:
+                    rated_seasons.append(season_rating)
+            derived_show_ratings[tmdb_id] = _rounded_whole_star_rating(rated_seasons)
+
     # --- Play count (detail view only) ---
     play_count_map: dict[int, int] = {}
     if len(items) == 1:
@@ -762,7 +833,19 @@ async def enrich_with_state(
         item["is_monitored"] = monitored_status.get(tid, False)
         item["request_enabled"] = request_enabled_map.get(tid, False)
         item["request_status"] = request_status_map.get(tid)
-        item["user_rating"] = user_ratings.get((tid, t))
+        explicit_rating = user_ratings.get((tid, t))
+        if t == "series" and item.get("season_number") is not None:
+            item["user_rating"] = explicit_season_ratings.get(
+                (tid, item["season_number"])
+            )
+            if item["user_rating"] is None:
+                item["user_rating"] = derived_season_ratings.get(
+                    (tid, item["season_number"])
+                )
+        elif t == "series" and explicit_rating is None:
+            item["user_rating"] = derived_show_ratings.get(tid)
+        else:
+            item["user_rating"] = explicit_rating
         item["play_count"] = play_count_map.get(tid, 0)
         _attach_episode_order_fields(item, episode_orders, tmdb_to_tvdb)
 
