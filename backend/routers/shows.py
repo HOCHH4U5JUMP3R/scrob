@@ -416,8 +416,74 @@ async def list_shows(
         )
 
     result = await db.execute(q.limit(page_size).offset(offset))
-    results = [format_show(s) for s in result.scalars().all()]
+    local_shows = result.scalars().all()
+    results = [format_show(s) for s in local_shows]
     await enrich_with_state(db, current_user.id, results)
+
+    # Overview cards need the same derived rating as the show detail page.
+    # Use explicit season ratings when present; otherwise derive each season
+    # from its rated episodes, then average the available season ratings.
+    show_tmdb_ids = [item["tmdb_id"] for item in results if item.get("tmdb_id")]
+    if show_tmdb_ids:
+        episode_ratings_q = await db.execute(
+            select(ShowModel.tmdb_id, Media.season_number, Rating.rating)
+            .join(Media, Media.show_id == ShowModel.id)
+            .join(Rating, Rating.media_id == Media.id)
+            .where(
+                ShowModel.tmdb_id.in_(show_tmdb_ids),
+                Media.media_type == MediaType.episode,
+                Media.season_number.isnot(None),
+                Media.season_number != 0,
+                Rating.user_id == current_user.id,
+                Rating.season_number.is_(None),
+                Rating.rating.isnot(None),
+            )
+        )
+        episode_ratings: dict[tuple[int, int], list[float]] = {}
+        for tmdb_id, season_number, rating_value in episode_ratings_q.all():
+            episode_ratings.setdefault((tmdb_id, season_number), []).append(rating_value)
+
+        season_ratings_q = await db.execute(
+            select(Media.tmdb_id, Rating.season_number, func.max(Rating.rating))
+            .join(Rating, Rating.media_id == Media.id)
+            .where(
+                Media.tmdb_id.in_(show_tmdb_ids),
+                Media.media_type == MediaType.series,
+                Rating.user_id == current_user.id,
+                Rating.season_number.isnot(None),
+                Rating.rating.isnot(None),
+            )
+            .group_by(Media.tmdb_id, Rating.season_number)
+        )
+        explicit_season_ratings = {
+            (tmdb_id, season_number): rating_value
+            for tmdb_id, season_number, rating_value in season_ratings_q.all()
+        }
+
+        derived_show_ratings: dict[int, float | None] = {}
+        for tmdb_id in show_tmdb_ids:
+            season_numbers = {
+                season_number for show_id, season_number in episode_ratings
+                if show_id == tmdb_id
+            } | {
+                season_number for show_id, season_number in explicit_season_ratings
+                if show_id == tmdb_id and season_number != 0
+            }
+            season_values = []
+            for season_number in season_numbers:
+                season_rating = explicit_season_ratings.get((tmdb_id, season_number))
+                if season_rating is None:
+                    season_rating = _rounded_whole_star_rating(
+                        episode_ratings.get((tmdb_id, season_number), [])
+                    )
+                if season_rating is not None:
+                    season_values.append(season_rating)
+            derived_show_ratings[tmdb_id] = _rounded_whole_star_rating(season_values)
+
+        for item in results:
+            if item.get("user_rating") is None:
+                item["user_rating"] = derived_show_ratings.get(item.get("tmdb_id"))
+
     if lang:
         show_ids = [r["id"] for r in results if r.get("id")]
         translations = await get_show_translations(db, show_ids, lang)
@@ -700,6 +766,24 @@ async def get_show(
             s["season_number"]: s for s in (show.tmdb_data or {}).get("seasons", [])
         }
 
+        # Include episode ratings in the payload so the derived season and
+        # series ratings below can be calculated from actual user ratings.
+        episode_ratings_q = await db.execute(
+            select(Media.season_number, Media.episode_number, func.max(Rating.rating))
+            .join(Rating, Rating.media_id == Media.id)
+            .where(
+                Media.show_id == show.id,
+                Media.media_type == MediaType.episode,
+                Rating.user_id == effective_user_id,
+                Rating.season_number.is_(None),
+            )
+            .group_by(Media.season_number, Media.episode_number)
+        )
+        episode_user_ratings = {
+            (season_number, episode_number): rating
+            for season_number, episode_number, rating in episode_ratings_q.all()
+        }
+
         seasons: dict = {}
         for ep in episodes:
             s_num = ep.season_number or 0
@@ -708,6 +792,9 @@ async def get_show(
             )
             ep_formatted = format_media(ep)
             ep_formatted["poster_path"] = ep.poster_path or season_poster
+            ep_formatted["user_rating"] = episode_user_ratings.get(
+                (ep.season_number, ep.episode_number)
+            )
             seasons.setdefault(s_num, []).append(ep_formatted)
 
         # Fetch networks + recommendations from TMDB if key is available
