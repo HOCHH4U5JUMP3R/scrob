@@ -310,6 +310,15 @@ async def submit_rating(
         settings=settings,
     )
 
+    if media_type == MediaType.episode:
+        derived_changes, derived_removed = await _recalculate_derived_series_ratings(
+            db, current_user.id, media.id
+        )
+        await _sync_derived_rating_changes(
+            db, current_user.id, derived_changes, derived_removed
+        )
+
+
     return format_rating(rating, media)
 
 
@@ -400,5 +409,14 @@ async def delete_rating(
         settings=settings,
         removed_ratings={(media.id, effective_season)},
     )
+
+    if mt == MediaType.episode:
+        derived_changes, derived_removed = await _recalculate_derived_series_ratings(
+            db, current_user.id, media.id
+        )
+        await _sync_derived_rating_changes(
+            db, current_user.id, derived_changes, derived_removed
+        )
+
 
     return {"status": "deleted"}
