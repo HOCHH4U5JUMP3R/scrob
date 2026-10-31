@@ -963,8 +963,29 @@ async def get_show(
             )
             season_ep_counts = {sn: count for sn, count in tvdb_count_q.all()}
 
-        # Build season states for all known seasons
-        for sn in set(list(coll_per_season.keys()) + list(season_ep_counts.keys())):
+        # Build states for every regular season, not only seasons that have
+        # collection/watch counts. A season with ratings but no collection
+        # activity must still have a state so its rating appears in the cards.
+        metadata_season_numbers = {
+            season.get("season_number")
+            for season in (show.tmdb_data or {}).get("seasons", [])
+            if isinstance(season, dict)
+            and isinstance(season.get("season_number"), int)
+            and season.get("season_number") > 0
+        }
+        known_season_numbers = (
+            set(coll_per_season)
+            | set(season_ep_counts)
+            | set(season_ratings)
+            | {
+                int(str(key).removeprefix("season_"))
+                for key in seasons
+                if str(key).removeprefix("season_").isdigit()
+                and int(str(key).removeprefix("season_")) > 0
+            }
+            | metadata_season_numbers
+        )
+        for sn in known_season_numbers:
             collected = coll_per_season.get(sn, 0)
             watched = watched_per_season.get(sn, 0)
             total = season_ep_counts.get(sn, 0)
@@ -1010,27 +1031,32 @@ async def get_show(
                 for ep_list in seasons.values():
                     apply_media_translations(ep_list, ep_trans)
 
-        # Derive missing season ratings from the user's rated episodes, then
-        # derive a missing show rating from those season ratings. Explicit
-        # ratings always take precedence over the automatic fallback.
+        # Derive missing season ratings from rated episodes. Then derive the
+        # series rating from the complete set of rated regular seasons. Keep
+        # explicit season/series ratings as the preferred values.
         for season_key, episode_items in seasons.items():
             try:
                 season_number_value = int(str(season_key).removeprefix("season_"))
             except (TypeError, ValueError):
+                continue
+            if season_number_value <= 0:
                 continue
             season_state = season_states.setdefault(season_number_value, {})
             if season_state.get("user_rating") is None:
                 season_state["user_rating"] = _rounded_whole_star_rating(
                     [episode.get("user_rating") for episode in episode_items]
                 )
+
+        # A season can have a stored season rating even when it has no local
+        # episode rows in this view. Include those ratings too, and calculate
+        # the series fallback from the same season values sent to the UI.
+        rated_season_values = [
+            state.get("user_rating")
+            for number, state in season_states.items()
+            if number > 0 and state.get("user_rating") is not None
+        ]
         if state_item.get("user_rating") is None:
-            state_item["user_rating"] = _rounded_whole_star_rating(
-                [
-                    state.get("user_rating")
-                    for number, state in season_states.items()
-                    if number != 0
-                ]
-            )
+            state_item["user_rating"] = _rounded_whole_star_rating(rated_season_values)
 
         rewatch_info = None
         if active_rewatch:
