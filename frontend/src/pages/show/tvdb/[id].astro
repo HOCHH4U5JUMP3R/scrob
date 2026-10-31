@@ -284,6 +284,7 @@ const backdropSrc = tmdbImageUrl(show?.backdrop_path, "w1280");
               const seasonTitle = formatSeasonTitle(seasonNum, s.name);
               const poster = s.poster_path || show!.poster_path;
               const seasonState = show!.season_states?.[seasonNum] ?? { watched: false, in_library: false, collection_pct: 0, user_rating: null };
+              const seasonRating = s.user_rating ?? seasonState.user_rating;
 
               return (
                 <div class="group/season bg-zinc-900/50 border border-zinc-800 rounded-3xl p-5 hover:bg-zinc-800/60 hover:border-blue-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-blue-900/10">
@@ -303,10 +304,10 @@ const backdropSrc = tmdbImageUrl(show?.backdrop_path, "w1280");
                     <div class="flex-1 py-2">
                       <div class="flex items-start justify-between gap-4 mb-1">
                         <h3 class="text-xl font-black text-zinc-100 group-hover/season:text-blue-400 transition-colors">{seasonTitle}</h3>
-                        {seasonState.user_rating != null && (
+                        {seasonRating != null && (
                           <div class="bg-zinc-950 border border-zinc-800 px-2 py-1 rounded-xl flex items-center gap-1.5 shrink-0 shadow-sm">
                             <span class="text-yellow-400 text-xs">★</span>
-                            <span class="text-zinc-100 text-xs font-bold">{seasonState.user_rating!.toFixed(1)}</span>
+                            <span class="text-zinc-100 text-xs font-bold">{Number(seasonRating).toFixed(1)}</span>
                           </div>
                         )}
                       </div>
@@ -334,7 +335,7 @@ const backdropSrc = tmdbImageUrl(show?.backdrop_path, "w1280");
                       tvdbId={show!.tvdb_id}
                       hideRequest={true}
                       hideLists={false}
-                      userRating={seasonState.user_rating ?? null}
+                      userRating={seasonRating ?? null}
                       ratingTitle={show!.title}
                       ratingSubtitle={seasonTitle}
                       ratingPosterPath={poster}
