@@ -2354,6 +2354,37 @@ async def get_tvdb_show(
                 )
                 season_ratings = dict(rating_result.all())
 
+                # Derived season ratings are stored on the series Media row
+                # with canonical TMDB season numbers and episode_order=None.
+                # Translate them to the TVDB season numbers used by this page.
+                # Explicit TVDB ratings above remain authoritative.
+                derived_season_result = await db.execute(
+                    select(Rating.season_number, Rating.rating).where(
+                        Rating.user_id == effective_user_id,
+                        Rating.media_id == show_media.id,
+                        Rating.episode_order.is_(None),
+                        Rating.season_number.isnot(None),
+                    )
+                )
+                tvdb_seasons_by_tmdb: dict[int, set[int]] = {}
+                for mapping in mappings:
+                    if mapping.tmdb_season_number is not None and mapping.tvdb_season_number is not None:
+                        tvdb_seasons_by_tmdb.setdefault(
+                            mapping.tmdb_season_number, set()
+                        ).add(mapping.tvdb_season_number)
+
+                for tmdb_season, derived_rating in derived_season_result.all():
+                    mapped_seasons = tvdb_seasons_by_tmdb.get(tmdb_season, set())
+                    if len(mapped_seasons) == 1:
+                        tvdb_season = next(iter(mapped_seasons))
+                    elif not mapped_seasons:
+                        tvdb_season = tmdb_season
+                    else:
+                        # A TMDB season spans multiple TVDB seasons; the
+                        # episode-level aggregation below resolves those.
+                        continue
+                    season_ratings.setdefault(tvdb_season, derived_rating)
+
                 # Episode ratings are stored on canonical TMDB Media rows.
                 # Re-map each rated episode to its TVDB season before deriving
                 # season ratings, otherwise the TVDB season cards cannot find
