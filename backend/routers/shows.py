@@ -2385,36 +2385,6 @@ async def get_tvdb_show(
                         continue
                     season_ratings.setdefault(tvdb_season, derived_rating)
 
-                # Episode ratings are stored on canonical TMDB Media rows.
-                # Re-map each rated episode to its TVDB season before deriving
-                # season ratings, otherwise the TVDB season cards cannot find
-                # the result under their displayed season number.
-                episode_rating_result = await db.execute(
-                    select(
-                        Media.season_number,
-                        Media.episode_number,
-                        Rating.rating,
-                    )
-                    .join(Rating, Rating.media_id == Media.id)
-                    .where(
-                        Media.show_id == show.id,
-                        Media.media_type == MediaType.episode,
-                        Rating.user_id == effective_user_id,
-                        Rating.season_number.is_(None),
-                    )
-                )
-                for tmdb_season, tmdb_episode, episode_rating in episode_rating_result.all():
-                    mapping = mapping_by_tmdb.get((tmdb_season, tmdb_episode))
-                    display_season = (
-                        mapping.tvdb_season_number
-                        if mapping and mapping.tvdb_season_number is not None
-                        else tmdb_season
-                    )
-                    if display_season is not None and episode_rating is not None:
-                        episode_ratings_by_tvdb_season.setdefault(
-                            display_season, []
-                        ).append(float(episode_rating))
-
                 user_lists_q = await db.execute(select(UserList.id).where(UserList.user_id == effective_user_id))
                 user_list_ids = [r[0] for r in user_lists_q.all()]
                 if user_list_ids:
@@ -2427,6 +2397,36 @@ async def get_tvdb_show(
                     )
                     for sn_, list_id in season_lists_q.all():
                         season_list_membership.setdefault(sn_, []).append(list_id)
+
+        # Derive TVDB season ratings from the same local episode rows used by
+        # the TVDB season endpoint. This must not depend on a TMDB series ID:
+        # TVDB-only shows still have local episode ratings.
+        if local_media_ids:
+            episode_rating_result = await db.execute(
+                select(
+                    Media.season_number,
+                    Media.episode_number,
+                    Rating.rating,
+                )
+                .join(Rating, Rating.media_id == Media.id)
+                .where(
+                    Media.id.in_(local_media_ids),
+                    Media.media_type == MediaType.episode,
+                    Rating.user_id == effective_user_id,
+                    Rating.season_number.is_(None),
+                )
+            )
+            for tmdb_season, tmdb_episode, episode_rating in episode_rating_result.all():
+                mapping = mapping_by_tmdb.get((tmdb_season, tmdb_episode))
+                display_season = (
+                    mapping.tvdb_season_number
+                    if mapping and mapping.tvdb_season_number is not None
+                    else tmdb_season
+                )
+                if display_season is not None and episode_rating is not None:
+                    episode_ratings_by_tvdb_season.setdefault(
+                        display_season, []
+                    ).append(float(episode_rating))
 
     season_states: dict = {}
     season_ep_counts = {
