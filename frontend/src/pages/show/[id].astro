@@ -50,7 +50,10 @@ const seasonCount = show?.seasons_meta?.length
 const year = show?.first_air_date?.slice(0, 4) ?? null;
 const detailSeasonRatings = Object.entries(show?.seasons ?? {})
   .filter(([seasonKey]) => Number(seasonKey.replace("season_", "")) > 0)
-  .map(([, episodes]: [string, any]) => {
+  .map(([seasonKey, episodes]: [string, any]) => {
+    const seasonNumber = Number(seasonKey.replace("season_", ""));
+    const explicitSeasonRating = (show as any)?.season_states?.[seasonNumber]?.user_rating;
+    if (explicitSeasonRating != null) return Number(explicitSeasonRating);
     const values = (episodes ?? [])
       .map((episode: any) => episode.user_rating)
       .filter((value: any) => value != null)
