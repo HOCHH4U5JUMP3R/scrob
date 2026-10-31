@@ -2353,6 +2353,37 @@ async def get_tvdb_show(
                 )
                 season_ratings = dict(rating_result.all())
 
+                # Episode ratings are stored on canonical TMDB Media rows.
+                # Re-map each rated episode to its TVDB season before deriving
+                # season ratings, otherwise the TVDB season cards cannot find
+                # the result under their displayed season number.
+                episode_rating_result = await db.execute(
+                    select(
+                        Media.season_number,
+                        Media.episode_number,
+                        Rating.rating,
+                    )
+                    .join(Rating, Rating.media_id == Media.id)
+                    .where(
+                        Media.show_id == show.id,
+                        Media.media_type == MediaType.episode,
+                        Rating.user_id == effective_user_id,
+                        Rating.season_number.is_(None),
+                    )
+                )
+                episode_ratings_by_tvdb_season: dict[int, list[float]] = {}
+                for tmdb_season, tmdb_episode, episode_rating in episode_rating_result.all():
+                    mapping = mapping_by_tmdb.get((tmdb_season, tmdb_episode))
+                    display_season = (
+                        mapping.tvdb_season_number
+                        if mapping and mapping.tvdb_season_number is not None
+                        else tmdb_season
+                    )
+                    if display_season is not None and episode_rating is not None:
+                        episode_ratings_by_tvdb_season.setdefault(
+                            display_season, []
+                        ).append(float(episode_rating))
+
                 user_lists_q = await db.execute(select(UserList.id).where(UserList.user_id == effective_user_id))
                 user_list_ids = [r[0] for r in user_lists_q.all()]
                 if user_list_ids:
@@ -2389,6 +2420,17 @@ async def get_tvdb_show(
             "user_rating": season_ratings.get(season_number_value),
             "in_lists": season_list_membership.get(season_number_value, []),
         }
+
+    # Use explicit TVDB season ratings where present; otherwise derive
+    # each season from its rated episodes. The series rating is then the
+    # average of the effective season ratings, matching the TMDB detail view.
+    for season_number_value, ratings in episode_ratings_by_tvdb_season.items() if show and series_tmdb_id else []:
+        season_state = season_states.setdefault(season_number_value, {})
+        if season_state.get("user_rating") is None:
+            average = sum(ratings) / len(ratings)
+            season_state["user_rating"] = float(
+                min(10, max(1, int(average + 0.5)))
+            )
 
     in_library = bool(season_states and any(v["in_library"] for v in season_states.values()))
 
@@ -2475,6 +2517,21 @@ async def get_tvdb_show(
         show_state: dict = {"tmdb_id": series_tmdb_id, "type": "series"}
         await enrich_with_state(db, effective_user_id, [show_state])
         in_lists = show_state.get("in_lists", [])
+    else:
+        show_state = {}
+
+    # Respect a manually assigned series rating; otherwise derive it from
+    # the effective season ratings (explicit or episode-derived).
+    series_user_rating = show_state.get("user_rating")
+    if series_user_rating is None:
+        effective_season_ratings = [
+            state.get("user_rating")
+            for season_number_value, state in season_states.items()
+            if season_number_value != 0 and state.get("user_rating") is not None
+        ]
+        if effective_season_ratings:
+            average = sum(effective_season_ratings) / len(effective_season_ratings)
+            series_user_rating = float(min(10, max(1, int(average + 0.5))))
 
     return {
         **show_data,
@@ -2498,7 +2555,7 @@ async def get_tvdb_show(
         "is_monitored": is_monitored,
         "request_enabled": request_enabled,
         "request_status": None,
-        "user_rating": None,
+        "user_rating": series_user_rating,
         "season_states": season_states,
         "seasons": {},
         "seasons_meta": show_data["seasons"],
