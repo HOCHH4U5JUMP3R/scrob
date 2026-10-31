@@ -48,11 +48,20 @@ const seasonCount = show?.seasons_meta?.length
   : seasons.filter(([k]) => Number(k.replace("season_", "")) > 0).length;
 
 const year = show?.first_air_date?.slice(0, 4) ?? null;
-const seasonRatingValues = Object.entries(show?.season_states ?? {})
-  .filter(([seasonNumber, state]: [string, any]) => Number(seasonNumber) > 0 && state?.user_rating != null)
-  .map(([, state]: [string, any]) => Number(state.user_rating));
-const derivedDetailRating = seasonRatingValues.length
-  ? Math.floor(seasonRatingValues.reduce((sum, value) => sum + value, 0) / seasonRatingValues.length + 0.5)
+const detailSeasonRatings = Object.entries(show?.seasons ?? {})
+  .filter(([seasonKey]) => Number(seasonKey.replace("season_", "")) > 0)
+  .map(([, episodes]: [string, any]) => {
+    const values = (episodes ?? [])
+      .map((episode: any) => episode.user_rating)
+      .filter((value: any) => value != null)
+      .map(Number);
+    return values.length
+      ? Math.floor(values.reduce((sum: number, value: number) => sum + value, 0) / values.length + 0.5)
+      : null;
+  })
+  .filter((value): value is number => value != null);
+const derivedDetailRating = detailSeasonRatings.length
+  ? Math.floor(detailSeasonRatings.reduce((sum, value) => sum + value, 0) / detailSeasonRatings.length + 0.5)
   : null;
 const effectiveShowRating = show?.user_rating ?? derivedDetailRating;
 const rating = effectiveShowRating != null ? effectiveShowRating.toFixed(1) : null;
