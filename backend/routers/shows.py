@@ -2437,6 +2437,8 @@ async def get_tvdb_show(
         list(season_ep_counts)
         + list(collected_positions)
         + list(watched_positions)
+        + list(season_ratings)
+        + list(episode_ratings_by_tvdb_season)
     ):
         collected = len(collected_positions.get(season_number_value, set()))
         watched = len(watched_positions.get(season_number_value, set()))
