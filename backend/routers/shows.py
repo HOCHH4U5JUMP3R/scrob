@@ -2465,6 +2465,17 @@ async def get_tvdb_show(
                 min(10, max(1, int(average + 0.5)))
             )
 
+    # Put the resolved per-user rating directly on each TVDB season metadata
+    # item. The season overview cards render from seasons_meta, so they do
+    # not depend on a parallel season_states lookup.
+    for season_meta in show_data["seasons"]:
+        season_number_value = season_meta.get("season_number")
+        season_meta["user_rating"] = (
+            season_states.get(season_number_value, {}).get("user_rating")
+            if season_number_value is not None
+            else None
+        )
+
     in_library = bool(season_states and any(v["in_library"] for v in season_states.values()))
 
     # Derive overall watched / collection_pct from season states (skip season 0 specials)
