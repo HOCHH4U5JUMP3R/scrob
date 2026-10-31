@@ -963,28 +963,8 @@ async def get_show(
             )
             season_ep_counts = {sn: count for sn, count in tvdb_count_q.all()}
 
-        # Build states for every regular season, including seasons without
-        # collection/watch activity, so their ratings always reach the UI.
-        metadata_season_numbers = {
-            season.get("season_number")
-            for season in (show.tmdb_data or {}).get("seasons", [])
-            if isinstance(season, dict)
-            and isinstance(season.get("season_number"), int)
-            and season.get("season_number") > 0
-        }
-        known_season_numbers = (
-            set(coll_per_season)
-            | set(season_ep_counts)
-            | set(season_ratings)
-            | {
-                int(str(key).removeprefix("season_"))
-                for key in seasons
-                if str(key).removeprefix("season_").isdigit()
-                and int(str(key).removeprefix("season_")) > 0
-            }
-            | metadata_season_numbers
-        )
-        for sn in known_season_numbers:
+        # Build season states for all known seasons
+        for sn in set(list(coll_per_season.keys()) + list(season_ep_counts.keys())):
             collected = coll_per_season.get(sn, 0)
             watched = watched_per_season.get(sn, 0)
             total = season_ep_counts.get(sn, 0)
@@ -999,26 +979,2230 @@ async def get_show(
                 "watch_started": watched > 0,
                 "user_rating": season_ratings.get(sn),
                 "in_lists": season_list_membership.get(sn, []),
-            }        # Derive missing season ratings from rated episodes, then calculate
-        # the series fallback from the same season values returned to the UI.
-        # Explicit series and season ratings always take precedence.
+            }
+
+        # Enhance seasons_meta with live TMDB data (id, rating, overview, air_date)
+        tmdb_season_map: dict = {}
+        if tmdb_extra:
+            tmdb_season_map = {s["season_number"]: s for s in tmdb_extra.get("seasons", [])}
+        base_seasons_meta = (show.tmdb_data or {}).get("seasons", [])
+        enhanced_seasons_meta = [
+            {
+                **s,
+                "tmdb_season_id": tmdb_season_map.get(s["season_number"], {}).get("id"),
+                "tmdb_rating": tmdb_season_map.get(s["season_number"], {}).get("vote_average"),
+                # Prefer live TMDB (translated) overview; fall back to DB value
+                "overview": tmdb_season_map.get(s["season_number"], {}).get("overview") or s.get("overview"),
+                "air_date": s.get("air_date") or tmdb_season_map.get(s["season_number"], {}).get("air_date"),
+            }
+            for s in base_seasons_meta
+        ]
+
+        where_to_watch = await get_where_to_watch(
+            db, effective_user_id, series_tmdb_id, MediaType.series, show=show, tmdb_key=api_key
+        )
+
+        # Overlay episode translations for the seasons dict
+        if metadata_lang:
+            all_ep_ids = [ep["id"] for ep_list in seasons.values() for ep in ep_list if ep.get("id")]
+            if all_ep_ids:
+                ep_trans = await get_media_translations(db, all_ep_ids, metadata_lang)
+                for ep_list in seasons.values():
+                    apply_media_translations(ep_list, ep_trans)
+
+        # Derive missing season ratings from the user's rated episodes, then
+        # derive a missing show rating from those season ratings. Explicit
+        # ratings always take precedence over the automatic fallback.
         for season_key, episode_items in seasons.items():
             try:
                 season_number_value = int(str(season_key).removeprefix("season_"))
             except (TypeError, ValueError):
-                continue
-            if season_number_value <= 0:
                 continue
             season_state = season_states.setdefault(season_number_value, {})
             if season_state.get("user_rating") is None:
                 season_state["user_rating"] = _rounded_whole_star_rating(
                     [episode.get("user_rating") for episode in episode_items]
                 )
-
-        rated_season_values = [
-            state.get("user_rating")
-            for number, state in season_states.items()
-            if number > 0 and state.get("user_rating") is not None
-        ]
         if state_item.get("user_rating") is None:
-            state_item["user_rating"] = _rounded_whole_star_rating(rated_season_values)
+            state_item["user_rating"] = _rounded_whole_star_rating(
+                [
+                    state.get("user_rating")
+                    for number, state in season_states.items()
+                    if number != 0
+                ]
+            )
+
+        rewatch_info = None
+        if active_rewatch:
+            progress_ids = await get_rewatch_progress_media_ids(db, active_rewatch.id)
+            rewatch_info = {
+                "started_at": active_rewatch.started_at.isoformat(),
+                "watched": len(progress_ids),
+                "total": total_aired_episodes(show),
+            }
+
+        show_dict = format_show(show)
+        if metadata_lang and tmdb_extra:
+            for field, tmdb_key in [("title", "name"), ("overview", "overview"), ("tagline", "tagline")]:
+                val = tmdb_extra.get(tmdb_key)
+                if val:
+                    show_dict[field] = val
+            # Use the language-specific TMDB poster only when no local cover
+            # has been selected. The Jellyfin/uploaded show poster on the
+            # detail page must match the collection card.
+            tmdb_poster = tmdb_extra.get("poster_path")
+            if tmdb_poster and not (show_dict.get("poster_path") or "").startswith("/media/"):
+                show_dict["poster_path"] = tmdb.poster_url(tmdb_poster)
+
+        return {
+            **show_dict,
+            "episode_order": selected_episode_order,
+            "tvdb_id": (
+                (order_preference.tvdb_id if order_preference else None)
+                or show.tvdb_id
+                or (tmdb_extra or show.tmdb_data or {}).get("external_ids", {}).get("tvdb_id")
+            ),
+            "seasons_meta": enhanced_seasons_meta,
+            "original_language": (show.tmdb_data or {}).get("original_language") or (tmdb_extra or {}).get("original_language"),
+            "age_rating": _extract_show_content_rating(tmdb_extra) if tmdb_extra else None,
+            "imdb_id": (tmdb_extra or show.tmdb_data or {}).get("external_ids", {}).get("imdb_id"),
+            "adult": (tmdb_extra or show.tmdb_data or {}).get("adult", False),
+            "in_library": state_item.get("collection_pct", 0) > 0 if state_item else False,
+            "watched": state_item.get("watched", False) if state_item else False,
+            "rewatch": rewatch_info,
+            "dropped": show.id in dropped_show_ids,
+            "in_lists": state_item.get("in_lists", []),
+            "collection_pct": state_item.get("collection_pct", 0),
+            "watch_pct": state_item.get("watch_pct", 0),
+            "watch_started": state_item.get("watch_started", False),
+            "is_monitored": state_item.get("is_monitored", False),
+            "request_enabled": state_item.get("request_enabled", False),
+            "request_status": state_item.get("request_status"),
+            "user_rating": state_item.get("user_rating"),
+            "season_states": season_states,
+            "seasons": {f"season_{k}": v for k, v in sorted(seasons.items())},
+            "created_by": [
+                {"tmdb_id": c["id"], "name": c["name"]}
+                for c in (tmdb_extra or show.tmdb_data or {}).get("created_by", [])
+            ],
+            "cast": cast,
+            "networks": networks,
+            "where_to_watch": where_to_watch,
+        }
+
+    # 2. If not local, fetch from TMDB - pass the viewer's metadata language so
+    # list-only / non-library shows are translated too (in-library shows use the
+    # stored ShowTranslation instead; see the `if show:` branch above). #235.
+    api_key = await get_user_tmdb_key(db, effective_user_id)
+    if not check_tmdb_key(api_key):
+        raise HTTPException(
+            status_code=404, detail="Show not found and TMDB key not configured"
+        )
+
+    metadata_lang = await get_user_metadata_language(db, effective_user_id)
+    try:
+        data = await tmdb.get_show(series_tmdb_id, api_key=api_key, language=metadata_lang)
+
+        cast = [
+            {
+                "tmdb_id": c.get("id"),
+                "name": c.get("name"),
+                "character": c.get("character"),
+                "profile_path": tmdb.poster_url(c.get("profile_path")),
+            }
+            for c in data.get("credits", {}).get("cast", [])[:12]
+        ]
+
+        networks = [
+            {
+                "id": n["id"],
+                "name": n["name"],
+                "logo_path": tmdb.poster_url(n.get("logo_path"), size="w500")
+                if n.get("logo_path")
+                else None,
+                "origin_country": n.get("origin_country"),
+            }
+            for n in data.get("networks", [])
+        ]
+
+        state_item_tmdb: dict = {"tmdb_id": series_tmdb_id, "type": "series"}
+        await enrich_with_state(db, effective_user_id, [state_item_tmdb])
+
+        where_to_watch = await get_where_to_watch(
+            db, effective_user_id, series_tmdb_id, MediaType.series, tmdb_key=api_key
+        )
+
+        # This branch has no local Show row, so none of the watched/collection
+        # per-season stats above are available - but season list membership only
+        # needs the show's Media row (independent of the local Show table), so it
+        # can still be populated here rather than left as an empty season_states.
+        season_list_membership: dict[int, list[int]] = {}
+        show_media_q = await db.execute(
+            select(Media).where(Media.tmdb_id == series_tmdb_id, Media.media_type == MediaType.series)
+        )
+        show_media = show_media_q.scalar_one_or_none()
+        if show_media:
+            user_lists_q = await db.execute(select(UserList.id).where(UserList.user_id == effective_user_id))
+            user_list_ids = [r[0] for r in user_lists_q.all()]
+            if user_list_ids:
+                season_lists_q = await db.execute(
+                    select(ListItem.season_number, ListItem.list_id).where(
+                        ListItem.media_id == show_media.id,
+                        ListItem.season_number.isnot(None),
+                        ListItem.list_id.in_(user_list_ids),
+                    )
+                )
+                for sn_, list_id in season_lists_q.all():
+                    season_list_membership.setdefault(sn_, []).append(list_id)
+        season_states_tmdb = {
+            s["season_number"]: {
+                "in_library": False,
+                "collection_pct": 0,
+                "watched": False,
+                "watch_pct": 0,
+                "watch_started": False,
+                "user_rating": None,
+                "in_lists": season_list_membership.get(s["season_number"], []),
+            }
+            for s in data.get("seasons", [])
+        }
+
+        return {
+            "id": None,
+            "tmdb_id": series_tmdb_id,
+            "episode_order": selected_episode_order,
+            "tvdb_id": (
+                (order_preference.tvdb_id if order_preference else None)
+                or data.get("external_ids", {}).get("tvdb_id")
+            ),
+            "title": data.get("name"),
+            "original_title": data.get("original_name"),
+            "overview": data.get("overview"),
+            "poster_path": tmdb.poster_url(data.get("poster_path")),
+            "backdrop_path": tmdb.poster_url(data.get("backdrop_path"), size="w1280"),
+            "tmdb_rating": data.get("vote_average"),
+            "status": data.get("status"),
+            "tagline": data.get("tagline"),
+            "first_air_date": data.get("first_air_date"),
+            "last_air_date": data.get("last_air_date"),
+            "genres": [g["name"] for g in data.get("genres", [])],
+            "original_language": data.get("original_language"),
+            "age_rating": _extract_show_content_rating(data),
+            "imdb_id": data.get("external_ids", {}).get("imdb_id"),
+            "adult": data.get("adult", False),
+            "in_library": state_item_tmdb.get("collection_pct", 0) > 0,
+            "watched": state_item_tmdb.get("watched", False),
+            "in_lists": state_item_tmdb.get("in_lists", []),
+            "collection_pct": state_item_tmdb.get("collection_pct", 0),
+            "is_monitored": state_item_tmdb.get("is_monitored", False),
+            "request_enabled": state_item_tmdb.get("request_enabled", False),
+            "request_status": state_item_tmdb.get("request_status"),
+            "user_rating": state_item_tmdb.get("user_rating"),
+            "created_by": [
+                {"tmdb_id": c["id"], "name": c["name"]}
+                for c in data.get("created_by", [])
+            ],
+            "cast": cast,
+            "networks": networks,
+            "seasons_meta": [
+                {
+                    "season_number": s["season_number"],
+                    "poster_path": tmdb.poster_url(s.get("poster_path")),
+                    "episode_count": s["episode_count"],
+                    "name": s["name"],
+                    "air_date": s.get("air_date"),
+                    "overview": s.get("overview"),
+                    "tmdb_rating": s.get("vote_average"),
+                }
+                for s in data.get("seasons", [])
+            ],
+            "seasons": {},
+            "season_states": season_states_tmdb,
+            "where_to_watch": where_to_watch,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"TMDB Show not found: {e}")
+
+
+@router.get("/{series_tmdb_id}/recommendations")
+async def get_show_recommendations(
+    series_tmdb_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user_or_api_key),
+):
+    """Fetch series recommendations from TMDB and enrich with state."""
+    if current_user is None:
+        await require_anon_nav_allowed(db)
+    effective_user_id = current_user.id if current_user else ANON_USER_ID
+
+    tmdb_key = await get_user_tmdb_key(db, effective_user_id)
+    if not check_tmdb_key(tmdb_key):
+        return {"results": []}
+
+    try:
+        data = await tmdb.get_show(series_tmdb_id, api_key=tmdb_key)
+        recs_raw = data.get("recommendations", {}).get("results", [])[:12]
+        recommendations = [
+            {
+                "id": None,
+                "tmdb_id": r["id"],
+                "type": "series",
+                "title": r.get("name") or r.get("title"),
+                "original_title": r.get("original_name") or r.get("original_title"),
+                "overview": r.get("overview"),
+                "poster_path": tmdb.poster_url(r.get("poster_path")),
+                "backdrop_path": tmdb.poster_url(r.get("backdrop_path"), size="w1280"),
+                "release_date": r.get("first_air_date") or r.get("release_date"),
+                "tmdb_rating": r.get("vote_average"),
+            }
+            for r in recs_raw
+        ]
+        await enrich_with_state(db, effective_user_id, recommendations)
+        return {"results": recommendations}
+    except Exception:
+        return {"results": []}
+
+
+@router.get("/{series_tmdb_id}/season/{season_number}")
+async def get_show_season(
+    series_tmdb_id: int,
+    season_number: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user_or_api_key),
+):
+    if current_user is None:
+        await require_anon_nav_allowed(db)
+    effective_user_id = current_user.id if current_user else ANON_USER_ID
+
+    # 1. Try to find show and local episodes for this season
+    show_result = await db.execute(
+        select(ShowModel).where(ShowModel.tmdb_id == series_tmdb_id)
+    )
+    show = show_result.scalar_one_or_none()
+
+    order_preference = await get_episode_order(db, effective_user_id, series_tmdb_id)
+    selected_episode_order = order_preference.episode_order if order_preference else "tmdb"
+    tvdb_season_mappings = (
+        await get_mappings_for_tvdb_season(db, series_tmdb_id, season_number)
+        if selected_episode_order == "tvdb"
+        else []
+    )
+
+    local_episodes = []
+    if show:
+        ep_query = (
+            select(Media)
+            .where(Media.media_type == MediaType.episode)
+            .where(Media.show_id == show.id)
+        )
+        if selected_episode_order != "tvdb":
+            ep_query = ep_query.where(Media.season_number == season_number)
+        local_episodes = (
+            await db.execute(ep_query.order_by(Media.season_number.asc(), Media.episode_number.asc()))
+        ).scalars().all()
+
+    # 2. Always fetch full season data from TMDB for consistent metadata
+    api_key = await get_user_tmdb_key(db, effective_user_id)
+    metadata_lang = await get_user_metadata_language(db, effective_user_id)
+
+    try:
+        if check_tmdb_key(api_key):
+            import asyncio
+
+            # Fetch season and show info (if not local) in parallel
+            if not show:
+                tmdb_data, tmdb_show_data = await asyncio.gather(
+                    tmdb.get_season(series_tmdb_id, season_number, api_key=api_key, language=metadata_lang),
+                    tmdb.get_show(series_tmdb_id, api_key=api_key, language=metadata_lang),
+                )
+                show_info = {
+                    "id": None,
+                    "tmdb_id": series_tmdb_id,
+                    "title": tmdb_show_data.get("name"),
+                    "poster_path": tmdb.poster_url(tmdb_show_data.get("poster_path")),
+                    "backdrop_path": tmdb.poster_url(
+                        tmdb_show_data.get("backdrop_path"), size="w1280"
+                    ),
+                }
+            else:
+                tmdb_data = await tmdb.get_season(
+                    series_tmdb_id, season_number, api_key=api_key, language=metadata_lang
+                )
+                show_info = format_show(show)
+
+            # In TVDB mode the requested season is a TVDB season. Build
+            # it from canonical TMDB episode positions so watched and
+            # collection state use the same Media identity as Jellyfin sync.
+            if selected_episode_order == "tvdb" and tvdb_season_mappings:
+                canonical_seasons = sorted({
+                    m.tmdb_season_number for m in tvdb_season_mappings
+                    if m.tmdb_season_number is not None
+                })
+                season_payloads = {}
+                for canonical_season in canonical_seasons:
+                    if canonical_season == season_number:
+                        season_payloads[canonical_season] = tmdb_data
+                    else:
+                        season_payloads[canonical_season] = await tmdb.get_season(
+                            series_tmdb_id, canonical_season,
+                            api_key=api_key, language=metadata_lang,
+                        )
+                tmdb_by_position = {
+                    (canonical_season, ep.get("episode_number")): ep
+                    for canonical_season, payload in season_payloads.items()
+                    for ep in payload.get("episodes", [])
+                }
+                tmdb_episodes = []
+                for mapping in tvdb_season_mappings:
+                    ep = tmdb_by_position.get(
+                        (mapping.tmdb_season_number, mapping.tmdb_episode_number)
+                    )
+                    if ep is None:
+                        continue
+                    display_ep = dict(ep)
+                    display_ep["episode_number"] = mapping.tvdb_episode_number
+                    display_ep["season_number"] = mapping.tvdb_season_number
+                    tmdb_episodes.append(display_ep)
+            else:
+                tmdb_episodes = tmdb_data.get("episodes", [])
+
+            total_in_season = len(tmdb_episodes)
+            today_str = date.today().isoformat()
+            total_aired_in_season = sum(
+                1 for ep in tmdb_episodes
+                if ep.get("air_date") and ep["air_date"] <= today_str
+            )
+            season_ep_tmdb_ids = [
+                ep.get("id") for ep in tmdb_episodes if ep.get("id")
+            ]
+
+            watched_ep_ids: set = set()
+            episode_ratings: dict = {}
+
+            # Find all local Media rows for these episodes (even if show_id is null)
+            # and map them by TMDB ID for easy lookup.
+            local_media_by_tmdb: dict[int, Media] = {}
+            if season_ep_tmdb_ids:
+                media_q = await db.execute(
+                    select(Media).where(
+                        Media.media_type == MediaType.episode,
+                        Media.tmdb_id.in_(season_ep_tmdb_ids)
+                    )
+                )
+                for m in media_q.scalars().all():
+                    local_media_by_tmdb[m.tmdb_id] = m
+
+            local_media_ids = [m.id for m in local_media_by_tmdb.values()]
+
+            if local_media_ids:
+                active_rewatch = await get_active_rewatch(db, effective_user_id, show.id) if show else None
+                if active_rewatch:
+                    watched_q = await db.execute(
+                        select(RewatchProgress.media_id).where(
+                            RewatchProgress.rewatch_id == active_rewatch.id,
+                            RewatchProgress.media_id.in_(local_media_ids),
+                        ).distinct()
+                    )
+                else:
+                    watched_q = await db.execute(
+                        select(WatchEvent.media_id).where(
+                            WatchEvent.user_id == effective_user_id,
+                            WatchEvent.media_id.in_(local_media_ids),
+                        ).distinct()
+                    )
+                watched_ep_ids = {r[0] for r in watched_q.all()}
+
+                ep_ratings_q = await db.execute(
+                    select(Rating.media_id, Rating.rating).where(
+                        Rating.user_id == effective_user_id,
+                        Rating.media_id.in_(local_media_ids),
+                        Rating.season_number.is_(None),
+                    )
+                )
+                episode_ratings = {r[0]: r[1] for r in ep_ratings_q.all()}
+
+            # Fetch list membership per episode
+            episode_in_lists: dict[int, list[int]] = {}
+            if local_media_ids:
+                user_lists_q = await db.execute(
+                    select(UserList.id).where(UserList.user_id == effective_user_id)
+                )
+                user_list_ids = [r[0] for r in user_lists_q.all()]
+                if user_list_ids:
+                    ep_lists_q = await db.execute(
+                        select(Media.tmdb_id, ListItem.list_id)
+                        .join(ListItem, ListItem.media_id == Media.id)
+                        .where(
+                            Media.id.in_(local_media_ids),
+                            ListItem.list_id.in_(user_list_ids),
+                        )
+                        .distinct()
+                    )
+                    for ep_tmdb_id, list_id in ep_lists_q.all():
+                        episode_in_lists.setdefault(ep_tmdb_id, []).append(list_id)
+
+            # Merge local library status. TVDB-ordered episodes use the
+            # canonical TMDB episode id rather than the displayed TVDB position.
+            local_map = {ep.episode_number: ep for ep in local_episodes}
+            tvdb_media_by_display_ep = {}
+            if selected_episode_order == "tvdb":
+                tvdb_media_by_display_ep = {
+                    mapping.tvdb_episode_number: local_media_by_tmdb.get(mapping.tmdb_episode_id)
+                    for mapping in tvdb_season_mappings
+                    if mapping.tvdb_episode_number is not None
+                }
+
+            collected_media_ids: set[int] = set()
+            if selected_episode_order == "tvdb" and local_media_ids:
+                collected_q = await db.execute(
+                    select(Collection.media_id).where(
+                        Collection.user_id == effective_user_id,
+                        Collection.media_id.in_(local_media_ids),
+                    ).distinct()
+                )
+                collected_media_ids = {r[0] for r in collected_q.all()}
+
+            # Subquery to check which (season, episode) pairs are in the user collection.
+            # Primary path: match by show_id. The outerjoin also catches rows where show_id
+            # points to a different DB row for the same TMDB show (duplicate show rows).
+            coll_show_conditions = [ShowModel.tmdb_id == series_tmdb_id]
+            if show:
+                coll_show_conditions.insert(0, Media.show_id == show.id)
+            user_coll_eps_q = await db.execute(
+                select(Media.season_number, Media.episode_number)
+                .join(Collection, Collection.media_id == Media.id)
+                .outerjoin(ShowModel, ShowModel.id == Media.show_id)
+                .where(
+                    Collection.user_id == effective_user_id,
+                    Media.media_type == MediaType.episode,
+                    Media.season_number == season_number,
+                    or_(*coll_show_conditions)
+                )
+                .distinct()
+            )
+            user_collected_eps = {(r[0], r[1]) for r in user_coll_eps_q.all()}
+
+            # Fallback: also match by TMDB episode ID for rows where show_id is null.
+            if season_ep_tmdb_ids:
+                tmdb_id_coll_q = await db.execute(
+                    select(Media.season_number, Media.episode_number)
+                    .join(Collection, Collection.media_id == Media.id)
+                    .where(
+                        Collection.user_id == effective_user_id,
+                        Media.media_type == MediaType.episode,
+                        Media.tmdb_id.in_(season_ep_tmdb_ids),
+                        Media.show_id.is_(None),
+                    )
+                    .distinct()
+                )
+                user_collected_eps |= {(r[0], r[1]) for r in tmdb_id_coll_q.all()}
+
+            episodes = []
+            for ep in tmdb_episodes:
+                ep_num = ep.get("episode_number")
+                local_ep = local_map.get(ep_num)
+                local_media_id = local_ep.id if local_ep else None
+                
+                if selected_episode_order == "tvdb":
+                    mapped_media = tvdb_media_by_display_ep.get(ep_num)
+                    local_media_id = mapped_media.id if mapped_media else None
+                    is_in_library = local_media_id in collected_media_ids if local_media_id else False
+                    is_watched = local_media_id in watched_ep_ids if local_media_id else False
+                    rating = episode_ratings.get(local_media_id) if local_media_id else None
+                else:
+                    is_in_library = (season_number, ep_num) in user_collected_eps
+                    is_watched = local_media_id in watched_ep_ids if local_media_id else False
+                    rating = episode_ratings.get(local_media_id) if local_media_id else None
+
+                episodes.append(
+                    {
+                        "id": local_media_id,
+                        "tmdb_id": ep.get("id"),
+                        "type": "episode",
+                        "title": ep.get("name"),
+                        "overview": ep.get("overview"),
+                        "poster_path": tmdb.poster_url(
+                            ep.get("still_path"), size="w500"
+                        ),
+                        "air_date": ep.get("air_date"),
+                        "episode_number": ep_num,
+                        "season_number": season_number,
+                        "tmdb_rating": ep.get("vote_average"),
+                        "in_library": is_in_library,
+                        "runtime": ep.get("runtime"),
+                        "watched": is_watched,
+                        "user_rating": rating,
+                        "in_lists": episode_in_lists.get(ep.get("id"), []),
+                    }
+                )
+
+            # Store episode translations for library browsing
+            if metadata_lang:
+                try:
+                    for ep_item in episodes:
+                        if ep_item.get("id"):
+                            await upsert_media_translation(
+                                db, ep_item["id"], metadata_lang,
+                                ep_item.get("title"),
+                                ep_item.get("overview"),
+                                None,
+                                None,
+                            )
+                    await db.commit()
+                except Exception:
+                    pass
+
+            show_state: dict = {"tmdb_id": series_tmdb_id, "type": "series"}
+            await enrich_with_state(db, effective_user_id, [show_state])
+
+            # Season-level stats: watched, in_library, collection_pct, user_rating
+            collected_in_season = 0
+            if selected_episode_order == "tvdb" and local_media_ids:
+                collected_in_season = len(collected_media_ids)
+            elif show:
+                # Count collected episodes in this season.
+                # Primary path: match by show_id.
+                coll_q = await db.execute(
+                    select(func.count(func.distinct(Media.episode_number)))
+                    .join(Collection, Collection.media_id == Media.id)
+                    .where(
+                        Media.show_id == show.id,
+                        Media.season_number == season_number,
+                        Collection.user_id == effective_user_id,
+                        Media.media_type == MediaType.episode,
+                        Media.episode_number.isnot(None),
+                    )
+                )
+                collected_in_season = coll_q.scalar_one()
+
+                # Fallback: count any collected episodes matched only by TMDB ID (show_id null).
+                # This covers rows created before show_id was reliably set on manual collects.
+                if season_ep_tmdb_ids:
+                    null_show_coll_q = await db.execute(
+                        select(Media.episode_number)
+                        .join(Collection, Collection.media_id == Media.id)
+                        .where(
+                            Collection.user_id == effective_user_id,
+                            Media.media_type == MediaType.episode,
+                            Media.tmdb_id.in_(season_ep_tmdb_ids),
+                            Media.show_id.is_(None),
+                            Media.episode_number.isnot(None),
+                        )
+                        .distinct()
+                    )
+                    null_show_ep_nums = {r[0] for r in null_show_coll_q.all()}
+                    
+                    # Merge: avoid double-counting episodes already found via show_id.
+                    already_by_show_q = await db.execute(
+                        select(Media.episode_number)
+                        .join(Collection, Collection.media_id == Media.id)
+                        .where(
+                            Media.show_id == show.id,
+                            Media.season_number == season_number,
+                            Collection.user_id == effective_user_id,
+                            Media.media_type == MediaType.episode,
+                            Media.episode_number.isnot(None),
+                        )
+                        .distinct()
+                    )
+                    already_ep_nums = {r[0] for r in already_by_show_q.all()}
+                    extra = null_show_ep_nums - already_ep_nums
+                    collected_in_season += len(extra)
+            elif season_ep_tmdb_ids:
+                # If no local show, just count by TMDB IDs
+                coll_q = await db.execute(
+                    select(func.count(func.distinct(Media.episode_number)))
+                    .join(Collection, Collection.media_id == Media.id)
+                    .where(
+                        Collection.user_id == effective_user_id,
+                        Media.media_type == MediaType.episode,
+                        Media.tmdb_id.in_(season_ep_tmdb_ids),
+                        Media.episode_number.isnot(None),
+                    )
+                )
+                collected_in_season = coll_q.scalar_one()
+
+            season_in_library = collected_in_season > 0
+            aired_denom = total_aired_in_season if total_aired_in_season > 0 else total_in_season
+            season_collection_pct = min(100, int((collected_in_season / aired_denom) * 100)) if aired_denom > 0 else 0
+
+            # Count unique episodes in this season that have been watched
+            # episodes list contains "watched": True/False for each episode.
+            watched_count = sum(1 for ep in episodes if ep.get("watched"))
+            season_watched = watched_count >= aired_denom if aired_denom > 0 else False
+            season_watch_pct = min(100, int((watched_count / aired_denom) * 100)) if aired_denom > 0 else 0
+            season_watch_started = watched_count > 0
+
+            # Season user rating (stored against show's Media row with season_number)
+            season_user_rating = None
+            season_in_lists: list[int] = []
+            show_media_q = await db.execute(
+                select(Media).where(Media.tmdb_id == series_tmdb_id, Media.media_type == MediaType.series)
+            )
+            show_media = show_media_q.scalar_one_or_none()
+            if show_media:
+                rating_q = await db.execute(
+                    select(Rating.rating).where(
+                        Rating.media_id == show_media.id,
+                        Rating.user_id == effective_user_id,
+                        Rating.season_number == season_number,
+                        Rating.episode_order.is_(None),
+                    )
+                )
+                season_user_rating = rating_q.scalar_one_or_none()
+
+            if season_user_rating is None:
+                season_user_rating = _rounded_whole_star_rating(
+                    [episode.get("user_rating") for episode in episodes]
+                )
+
+            if show_media:
+                season_lists_q = await db.execute(
+                    select(ListItem.list_id)
+                    .join(UserList, UserList.id == ListItem.list_id)
+                    .where(
+                        ListItem.media_id == show_media.id,
+                        ListItem.season_number == season_number,
+                        UserList.user_id == effective_user_id,
+                    )
+                )
+                season_in_lists = [r[0] for r in season_lists_q.all()]
+
+            return {
+                "id": tmdb_data.get("id"),
+                "tmdb_id": series_tmdb_id,
+                "season_number": season_number,
+                "name": tmdb_data.get("name"),
+                "overview": tmdb_data.get("overview"),
+                # A season can have its own Jellyfin or uploaded cover. Keep
+                # that override instead of replacing it with TMDB's season art.
+                "poster_path": next(
+                    (
+                        meta.get("poster_path")
+                        for meta in (show.tmdb_data or {}).get("seasons", [])
+                        if meta.get("season_number") == season_number and str(meta.get("poster_path", "")).startswith("/media/")
+                    ),
+                    tmdb.poster_url(tmdb_data.get("poster_path")),
+                ) if show else tmdb.poster_url(tmdb_data.get("poster_path")),
+                "backdrop_path": tmdb.poster_url(
+                    tmdb_data.get("backdrop_path"), size="w1280"
+                ),
+                "air_date": tmdb_data.get("air_date"),
+                "tmdb_rating": tmdb_data.get("vote_average"),
+                "episodes": episodes,
+                "show": show_info,
+                "show_watched": show_state.get("watched", False),
+                "season_watched": season_watched,
+                "season_watch_pct": season_watch_pct,
+                "season_watch_started": season_watch_started,
+                "season_in_library": season_in_library,
+                "season_collection_pct": season_collection_pct,
+                "season_user_rating": season_user_rating,
+                "season_in_lists": season_in_lists,
+                "show_in_lists": show_state.get("in_lists", []),
+                "show_in_library": show_state.get("collection_pct", 0) > 0,
+                "show_collection_pct": show_state.get("collection_pct", 0),
+                "show_request_enabled": show_state.get("request_enabled", False),
+                "show_is_monitored": show_state.get("is_monitored", False),
+            }
+        elif show:
+            # Fallback to local only if no TMDB key
+            return {
+                "season_number": season_number,
+                "name": f"Season {season_number}",
+                "episodes": [format_media(ep) for ep in local_episodes],
+                "show": format_show(show),
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Show not found")
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=404, detail=f"Season not found: {e}")
+
+
+@router.get("/{series_tmdb_id}/season/{season_number}/{episode_number}")
+async def get_episode_detail(
+    series_tmdb_id: int,
+    season_number: int,
+    episode_number: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user_or_api_key),
+):
+    if current_user is None:
+        await require_anon_nav_allowed(db)
+    effective_user_id = current_user.id if current_user else ANON_USER_ID
+
+    api_key = await get_user_tmdb_key(db, effective_user_id)
+    if not check_tmdb_key(api_key):
+        raise HTTPException(status_code=404, detail="TMDB API Key not configured")
+    metadata_lang = await get_user_metadata_language(db, effective_user_id)
+
+    try:
+        import asyncio
+
+        show_result = await db.execute(
+            select(ShowModel).where(ShowModel.tmdb_id == series_tmdb_id)
+        )
+        show = show_result.scalar_one_or_none()
+
+        if show:
+            try:
+                ep_data = await tmdb.get_episode(
+                    series_tmdb_id, season_number, episode_number, api_key=api_key, language=metadata_lang
+                )
+            except Exception:
+                if show.tvdb_id:
+                    # TMDB doesn't have this season/episode under the numbering
+                    # TVDB uses for this show (#162, #186) - the show's own TVDB
+                    # match has the authoritative structure for it. But
+                    # season_number/episode_number here are TMDB-style (the URL
+                    # this endpoint was reached with) - they are NOT valid TVDB
+                    # positions in general, so they can't be reused as-is
+                    # (see #186 follow-up: doing that returned a DIFFERENT,
+                    # wrong episode's metadata instead of a clear error).
+                    # Translate via the same EpisodeOrderMapping table
+                    # get_tvdb_show already uses for this exact purpose.
+                    mapping_result = await db.execute(
+                        select(EpisodeOrderMapping).where(
+                            EpisodeOrderMapping.series_tmdb_id == series_tmdb_id,
+                            EpisodeOrderMapping.tmdb_season_number == season_number,
+                            EpisodeOrderMapping.tmdb_episode_number == episode_number,
+                        )
+                    )
+                    mapping = mapping_result.scalar_one_or_none()
+                    if mapping:
+                        return await get_tvdb_episode(
+                            show.tvdb_id, mapping.tvdb_season_number, mapping.tvdb_episode_number, db, current_user,
+                        )
+                    # No mapping computed for this episode - don't guess by
+                    # reusing the TMDB numbers as TVDB ones; that's how this
+                    # regressed from "404" to "wrong episode's data" before.
+                    # Raise Scrob's own message instead of falling through to
+                    # the bare `raise` below, which would surface TMDB's raw
+                    # API error (including its URL) to the client verbatim.
+                    raise HTTPException(
+                        status_code=404,
+                        detail="This episode isn't available under TMDB's numbering, and no TVDB "
+                        "episode mapping has been computed for this show yet. Try Refresh Metadata "
+                        "on the show page, or switch this show to TVDB numbering.",
+                    )
+                raise
+            show_info = format_show(show)
+        else:
+            ep_data, show_tmdb = await asyncio.gather(
+                tmdb.get_episode(
+                    series_tmdb_id, season_number, episode_number, api_key=api_key, language=metadata_lang
+                ),
+                tmdb.get_show(series_tmdb_id, api_key=api_key, language=metadata_lang),
+            )
+            show_info = {
+                "id": None,
+                "tmdb_id": series_tmdb_id,
+                "title": show_tmdb.get("name"),
+                "poster_path": tmdb.poster_url(show_tmdb.get("poster_path")),
+                "backdrop_path": tmdb.poster_url(
+                    show_tmdb.get("backdrop_path"), size="w1280"
+                ),
+            }
+
+        # Check local library for this episode
+        local_ep = None
+        library_info = None
+        if show:
+            local_result = await db.execute(
+                select(Media)
+                .where(Media.media_type == MediaType.episode)
+                .where(Media.show_id == show.id)
+                .where(Media.season_number == season_number)
+                .where(Media.episode_number == episode_number)
+            )
+            local_ep = local_result.scalars().first()
+            
+            if local_ep:
+                coll_q = (
+                    select(CollectionFile)
+                    .join(Collection, Collection.id == CollectionFile.collection_id)
+                    .where(Collection.media_id == local_ep.id, Collection.user_id == effective_user_id)
+                    # Rows from sources with no file details (Nuvio, Stremio) carry no
+                    # quality at all, so keep them behind real files or the badge blanks out.
+                    .order_by(CollectionFile.resolution.is_(None).asc(), CollectionFile.added_at.desc())
+                )
+                coll_res = await db.execute(coll_q)
+                coll_file = coll_res.scalars().first()
+                if coll_file:
+                    library_info = {
+                        "resolution": coll_file.resolution,
+                        "video_codec": coll_file.video_codec,
+                        "audio_codec": coll_file.audio_codec,
+                        "audio_channels": coll_file.audio_channels,
+                        "audio_languages": coll_file.audio_languages,
+                        "subtitle_languages": coll_file.subtitle_languages,
+                    }
+
+        credits = ep_data.get("credits", {})
+        cast = [
+            {
+                "tmdb_id": c.get("id"),
+                "name": c.get("name"),
+                "character": c.get("character"),
+                "profile_path": tmdb.poster_url(c.get("profile_path")),
+            }
+            for c in credits.get("cast", [])[:12]
+        ]
+        guest_stars = [
+            {
+                "tmdb_id": c.get("id"),
+                "name": c.get("name"),
+                "character": c.get("character"),
+                "profile_path": tmdb.poster_url(c.get("profile_path")),
+            }
+            for c in ep_data.get("guest_stars", [])[:6]
+        ]
+
+        # Store episode translation for library browsing
+        if metadata_lang and local_ep:
+            try:
+                await upsert_media_translation(
+                    db, local_ep.id, metadata_lang,
+                    ep_data.get("name"),
+                    ep_data.get("overview"),
+                    None,
+                    ep_data.get("still_path"),
+                )
+                await db.commit()
+            except Exception:
+                pass
+
+        # Get all episodes in this season for navigation
+        season_tmdb = await tmdb.get_season(
+            series_tmdb_id, season_number, api_key=api_key, language=metadata_lang
+        )
+        episodes_nav = [
+            {
+                "episode_number": ep.get("episode_number"),
+                "title": ep.get("name"),
+            }
+            for ep in season_tmdb.get("episodes", [])
+        ]
+
+        ep_tmdb_id = ep_data.get("id")
+        ep_state: dict = {"tmdb_id": ep_tmdb_id, "type": "episode"}
+        await enrich_with_state(db, effective_user_id, [ep_state])
+
+        return {
+            "id": local_ep.id if local_ep else None,
+            "tmdb_id": ep_tmdb_id,
+            "in_library": ep_state.get("in_library", local_ep is not None),
+            "watched": ep_state.get("watched", False),
+            "in_lists": ep_state.get("in_lists", []),
+            "collection_pct": ep_state.get("collection_pct", 100 if local_ep else 0),
+            "user_rating": ep_state.get("user_rating"),
+            "play_count": ep_state.get("play_count", 0),
+            "episode_number": episode_number,
+            "season_number": season_number,
+            "title": ep_data.get("name"),
+            "overview": ep_data.get("overview"),
+            "still_path": tmdb.poster_url(ep_data.get("still_path"), size="w780"),
+            "air_date": ep_data.get("air_date"),
+            "runtime": ep_data.get("runtime"),
+            "tmdb_rating": ep_data.get("vote_average"),
+            "cast": cast,
+            "guest_stars": guest_stars,
+            "show": show_info,
+            "season": {
+                "name": season_tmdb.get("name") or f"Season {season_number}",
+                "season_number": season_number,
+                "poster_path": tmdb.poster_url(season_tmdb.get("poster_path")),
+            },
+            "episodes": episodes_nav,
+            "library": library_info,
+        }
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=404, detail=f"Episode not found: {e}")
+
+
+def apply_show_metadata(show: ShowModel, data: dict) -> None:
+    """Writes TMDB show-detail fields onto a local Show row. Shared by the
+    manual 'Refresh Metadata' action below, the daily metadata sweep
+    (main.py's _show_metadata_refresher), and Next Up's on-demand self-heal
+    (routers/history.py), so all keep exactly the same field mapping.
+
+    Never call this with TMDB data for a show whose tmdb_data snapshot is
+    TVDB-sourced (tmdb_data.source == "tvdb") - its season layout is
+    TVDB-shaped (#335) and would be clobbered."""
+    show.title = data.get("name") or show.title
+    show.original_title = data.get("original_name")
+    show.overview = data.get("overview")
+    show.poster_path = tmdb.poster_url(data.get("poster_path"))
+    show.backdrop_path = tmdb.poster_url(data.get("backdrop_path"), size="w1280")
+    show.tmdb_rating = data.get("vote_average")
+    show.status = data.get("status")
+    show.tagline = data.get("tagline")
+    show.first_air_date = data.get("first_air_date")
+    show.last_air_date = data.get("last_air_date")
+    show.tmdb_data = {
+        "genres": [g["name"] for g in data.get("genres", [])],
+        "external_ids": data.get("external_ids", {}),
+        "original_language": data.get("original_language"),
+        # Kept so capped_season_episode_counts() can exclude unaired episodes
+        # from cache-only callers like Next Up, which have no tmdb_extra (#296).
+        "last_episode_to_air": data.get("last_episode_to_air"),
+        # Kept so Next Up's missing-episode fallback can tell from the DB alone
+        # whether a new episode can have aired since this snapshot was written
+        # (routers/history.py's _next_up_needs_live_fetch, #332).
+        "next_episode_to_air": data.get("next_episode_to_air"),
+        # When this snapshot was written - the daily metadata sweep and Next Up
+        # use it to bound how stale the snapshot may get before re-fetching.
+        "refreshed_at": datetime.now(timezone.utc).isoformat(),
+        "seasons": [
+            {
+                "season_number": s["season_number"],
+                "poster_path": tmdb.poster_url(s.get("poster_path")),
+                "episode_count": s["episode_count"],
+                "name": s["name"],
+                "air_date": s.get("air_date"),
+                "overview": s.get("overview"),
+            }
+            for s in data.get("seasons", [])
+        ],
+        "networks": [
+            {
+                "id": n.get("id"),
+                "name": n.get("name"),
+                "logo_path": n.get("logo_path"),
+                "origin_country": n.get("origin_country"),
+            }
+            for n in data.get("networks", [])
+        ],
+    }
+
+
+@router.post("/{series_tmdb_id}/refresh")
+async def refresh_show_metadata(
+    series_tmdb_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    api_key = await get_user_tmdb_key(db, current_user.id)
+    if not check_tmdb_key(api_key):
+        raise HTTPException(status_code=400, detail="TMDB API key not configured")
+
+    show_result = await db.execute(
+        select(ShowModel).where(ShowModel.tmdb_id == series_tmdb_id)
+    )
+    show = show_result.scalar_one_or_none()
+    if not show:
+        raise HTTPException(status_code=404, detail="Show not found in local library")
+
+    try:
+        # cache_ttl=None: this is the user explicitly asking for fresh data -
+        # the shared 30-minute TMDB response cache would otherwise silently
+        # hand back whatever was last fetched (e.g. from just browsing the
+        # show page moments earlier), making "Refresh Metadata" a no-op.
+        data = await tmdb.get_show(series_tmdb_id, api_key=api_key, cache_ttl=None)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"TMDB fetch failed: {e}")
+
+    apply_show_metadata(show, data)
+
+    # Re-enrich all local episodes linked to this show
+    ep_result = await db.execute(
+        select(Media)
+        .where(Media.media_type == MediaType.episode)
+        .where(Media.show_id == show.id)
+    )
+    episodes = ep_result.scalars().all()
+
+    # Also find orphaned episodes (show_id = null) in this user's collection
+    # whose (season_number, episode_number) match TMDB data for this show.
+    # This happens when the show's TMDB lookup failed during the original sync,
+    # leaving episodes with no show_id even though they belong to this show.
+    user_media_ids_sq = select(Collection.media_id).where(Collection.user_id == current_user.id)
+    orphan_result = await db.execute(
+        select(Media)
+        .where(
+            Media.media_type == MediaType.episode,
+            Media.show_id.is_(None),
+            Media.id.in_(user_media_ids_sq),
+        )
+    )
+    orphans = orphan_result.scalars().all()
+
+    semaphore = asyncio.Semaphore(10)
+    season_data: dict[int, dict[int, dict]] = {}
+
+    # Collect seasons needed: linked episodes + all show seasons (for orphan matching)
+    linked_seasons = {ep.season_number for ep in episodes if ep.season_number is not None}
+    tmdb_seasons = {s["season_number"] for s in data.get("seasons", [])}
+    orphan_seasons = {ep.season_number for ep in orphans if ep.season_number is not None}
+    # Only fetch seasons that could contain orphans belonging to this show
+    needed_seasons = linked_seasons | (tmdb_seasons & orphan_seasons)
+
+    async def fetch_season(sn: int) -> None:
+        async with semaphore:
+            try:
+                # See the matching comment on the tmdb.get_show call above.
+                d = await tmdb.get_season(series_tmdb_id, sn, api_key=api_key, cache_ttl=None)
+                season_data[sn] = {ep["episode_number"]: ep for ep in d.get("episodes", [])}
+            except Exception:
+                season_data[sn] = {}
+
+    # Some shows have season/episode numbering that only lines up under TVDB,
+    # not TMDB (#162, #186) - episodes this refresh can't find in season_data
+    # fall back to the show's TVDB match, when it has one, instead of being
+    # silently left with stale/incomplete metadata.
+    tvdb_api_key = None
+    tvdb_lang = None
+    tvdb_season_data: dict[int, dict[int, dict]] = {}
+    if show.tvdb_id:
+        tvdb_api_key = await get_user_tvdb_key(db, current_user.id)
+        if tvdb_api_key:
+            tvdb_lang = tvdb_client.tvdb_language(await get_user_metadata_language(db, current_user.id))
+
+    async def fetch_tvdb_season(sn: int) -> None:
+        async with semaphore:
+            try:
+                # See the matching comment on the tmdb.get_show call above.
+                raw_eps = await tvdb_client.get_series_episodes(
+                    show.tvdb_id, sn, tvdb_api_key, language=tvdb_lang, cache_ttl=None,
+                )
+                tvdb_season_data[sn] = {e.get("number"): e for e in raw_eps}
+            except Exception:
+                tvdb_season_data[sn] = {}
+
+    if needed_seasons:
+        fetches = [fetch_season(sn) for sn in needed_seasons]
+        if tvdb_api_key:
+            fetches += [fetch_tvdb_season(sn) for sn in needed_seasons]
+        await asyncio.gather(*fetches)
+
+    def apply_episode_data(media: Media, ep: dict) -> None:
+        media.show_id = show.id
+        media.tmdb_id = ep.get("id") or media.tmdb_id
+        media.title = ep.get("name") or media.title
+        media.overview = ep.get("overview")
+        media.poster_path = tmdb.poster_url(ep.get("still_path"), size="w500")
+        media.release_date = ep.get("air_date")
+        media.tmdb_rating = ep.get("vote_average")
+        media.runtime = ep.get("runtime") or media.runtime  # see #169
+        media.tmdb_data = {"runtime": ep.get("runtime"), "cast": []}
+
+    async def apply_tvdb_episode_data(media: Media, raw_ep: dict) -> None:
+        media.show_id = show.id
+        await enrich_episode_from_tvdb(media, tvdb_client.format_episode(raw_ep))
+
+    async def apply_best_available(media: Media) -> Media:
+        if media.season_number is None:
+            return media
+        ep = season_data.get(media.season_number, {}).get(media.episode_number)
+        if ep:
+            return await apply_media_change_safely(
+                db, media, lambda media=media, ep=ep: apply_episode_data(media, ep)
+            )
+        # media.season_number/episode_number are only safe to reuse as TVDB
+        # query keys when they're already confirmed TVDB-native (this row was
+        # created via the TVDB fallback before). For an episode that was
+        # successfully enriched from TMDB, these numbers are TMDB-canonical -
+        # a TEMPORARY TMDB failure for its season this run (unrelated to real
+        # TVDB/TMDB divergence) would otherwise silently overwrite it with a
+        # DIFFERENT, wrong TVDB episode's data instead of just leaving it
+        # untouched (see #186 follow-up - this is the same mistake as
+        # get_episode_detail's, but persisted instead of just displayed).
+        if is_unmapped_tvdb_episode(media):
+            tvdb_ep = tvdb_season_data.get(media.season_number, {}).get(media.episode_number)
+            if tvdb_ep:
+                return await apply_media_change_safely(
+                    db, media, lambda media=media, tvdb_ep=tvdb_ep: apply_tvdb_episode_data(media, tvdb_ep)
+                )
+        return media
+
+    episode_ids: list[int] = []
+    for media in episodes:
+        media = await apply_best_available(media)
+        episode_ids.append(media.id)
+
+    # Adopt orphans whose (season, episode) has exactly one candidate in this show's TMDB/TVDB data
+    orphan_ids: list[int] = []
+    for media in orphans:
+        if media.episode_number is not None:
+            media = await apply_best_available(media)
+        orphan_ids.append(media.id)
+
+    all_media_ids = episode_ids + orphan_ids
+    await refresh_technical_data(db, all_media_ids, current_user.id)
+
+    await db.commit()
+    return {"message": "Metadata refreshed successfully"}
+
+
+# ── TVDB Show Endpoints ─────────────────────────────────────────────────────
+
+
+@router.get("/tvdb/{tvdb_id}")
+async def get_tvdb_show(
+    tvdb_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user_or_api_key),
+):
+    if current_user is None:
+        await require_anon_nav_allowed(db)
+    effective_user_id = current_user.id if current_user else ANON_USER_ID
+
+    api_key = await get_user_tvdb_key(db, effective_user_id)
+    if not api_key:
+        raise HTTPException(status_code=400, detail="TVDB API key not configured")
+
+    metadata_lang = await get_user_metadata_language(db, effective_user_id)
+    tvdb_lang = tvdb_client.tvdb_language(metadata_lang)
+
+    try:
+        raw = await tvdb_client.get_series(tvdb_id, api_key)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"TVDB fetch failed: {e}")
+
+    show_data = tvdb_client.format_series(raw, language=tvdb_lang)
+    cast = tvdb_client.format_cast(raw)
+
+    series_tmdb_id = show_data.get("tmdb_id_cross")
+    series_tmdb_id = int(series_tmdb_id) if series_tmdb_id else None
+    show_result = await db.execute(
+        select(ShowModel).where(
+            or_(
+                ShowModel.tvdb_id == tvdb_id,
+                ShowModel.tmdb_id == series_tmdb_id,
+            )
+        )
+    )
+    show = show_result.scalar_one_or_none()
+    if show is None:
+        if series_tmdb_id:
+            tmdb_api_key_for_show = await get_user_tmdb_key(db, effective_user_id)
+            from routers.webhooks import _find_or_create_show
+            show = await _find_or_create_show(db, series_tmdb_id, tmdb_api_key_for_show)
+        else:
+            # Show has no TMDB presence at all — mirrors the "resolve an
+            # unmatched show to TVDB" flow in routers/sync.py.
+            show = ShowModel(
+                tvdb_id=tvdb_id,
+                tmdb_id=None,
+                title=show_data.get("title") or f"TVDB #{tvdb_id}",
+                original_title=show_data.get("original_title"),
+                overview=show_data.get("overview"),
+                poster_path=show_data.get("poster_path"),
+                backdrop_path=show_data.get("backdrop_path"),
+                status=show_data.get("status"),
+                first_air_date=show_data.get("first_air_date"),
+                last_air_date=show_data.get("last_air_date"),
+                tmdb_data={"seasons": show_data.get("seasons", []), "genres": show_data.get("genres", []), "source": "tvdb"},
+            )
+            db.add(show)
+            await db.flush()
+
+    # Link this Show to its TVDB id (see #101 — mark-as-watched/collect
+    # endpoints only ever look shows up by tmdb_id, so without this they can
+    # never fall back to TVDB for episodes TMDB doesn't have). Also backfill
+    # poster/backdrop/overview from TVDB when TMDB's own entry lacks them —
+    # common for a sparsely-listed show. Never overwrite an existing
+    # different tvdb_id link (it's unique).
+    show_changed = False
+    if not show.tvdb_id:
+        show.tvdb_id = tvdb_id
+        show_changed = True
+    if not show.poster_path and show_data.get("poster_path"):
+        show.poster_path = show_data["poster_path"]
+        show_changed = True
+    if not show.backdrop_path and show_data.get("backdrop_path"):
+        show.backdrop_path = show_data["backdrop_path"]
+        show_changed = True
+    if not show.overview and show_data.get("overview"):
+        show.overview = show_data["overview"]
+        show_changed = True
+    if show_changed:
+        await db.flush()
+        await db.commit()
+
+    mapping_result = await db.execute(
+        select(EpisodeOrderMapping).where(
+            EpisodeOrderMapping.series_tmdb_id == series_tmdb_id
+        )
+    ) if series_tmdb_id else None
+    mappings = list(mapping_result.scalars().all()) if mapping_result else []
+    tmdb_api_key = await get_user_tmdb_key(db, effective_user_id)
+    show_data["seasons"], tmdb_show = await _enrich_tvdb_seasons(
+        show_data["seasons"],
+        mappings,
+        tvdb_api_key=api_key,
+        tvdb_language=tvdb_lang,
+        series_tmdb_id=series_tmdb_id,
+        tmdb_api_key=tmdb_api_key,
+        metadata_language=metadata_lang,
+    )
+    _apply_local_artwork_overrides(show, show_data)
+    mapping_by_tmdb = {
+        (mapping.tmdb_season_number, mapping.tmdb_episode_number): mapping
+        for mapping in mappings
+    }
+
+    collected_positions: dict[int, set[int]] = {}
+    watched_positions: dict[int, set[int]] = {}
+    season_ratings: dict[int, float] = {}
+    season_list_membership: dict[int, list[int]] = {}
+    if show:
+        local_eps_result = await db.execute(
+            select(Media).where(
+                Media.show_id == show.id,
+                Media.media_type == MediaType.episode,
+            )
+        )
+        local_eps = list(local_eps_result.scalars().all())
+        local_media_ids = [episode.id for episode in local_eps]
+        collected_ids: set[int] = set()
+        watched_ids: set[int] = set()
+        if local_media_ids:
+            collected_result = await db.execute(
+                select(Collection.media_id).where(
+                    Collection.user_id == effective_user_id,
+                    Collection.media_id.in_(local_media_ids),
+                )
+            )
+            collected_ids = {row[0] for row in collected_result.all()}
+
+            active_rewatch = await get_active_rewatch(db, effective_user_id, show.id)
+            if active_rewatch:
+                watched_result = await db.execute(
+                    select(RewatchProgress.media_id).where(
+                        RewatchProgress.rewatch_id == active_rewatch.id,
+                        RewatchProgress.media_id.in_(local_media_ids),
+                    )
+                )
+            else:
+                watched_result = await db.execute(
+                    select(WatchEvent.media_id).where(
+                        WatchEvent.user_id == effective_user_id,
+                        WatchEvent.media_id.in_(local_media_ids),
+                    )
+                )
+            watched_ids = {row[0] for row in watched_result.all()}
+
+        for episode in local_eps:
+            mapping = mapping_by_tmdb.get(
+                (episode.season_number, episode.episode_number)
+            )
+            if mapping:
+                target_season = mapping.tvdb_season_number
+                target_episode = mapping.tvdb_episode_number
+            else:
+                # No mapping for this specific episode — fall back to its own
+                # TMDB position rather than dropping it from the counts entirely.
+                target_season = episode.season_number
+                target_episode = episode.episode_number
+            if target_season is None or target_episode is None:
+                continue
+            if episode.id in collected_ids:
+                collected_positions.setdefault(target_season, set()).add(target_episode)
+            if episode.id in watched_ids:
+                watched_positions.setdefault(target_season, set()).add(target_episode)
+
+        if series_tmdb_id:
+            show_media_result = await db.execute(
+                select(Media).where(
+                    Media.tmdb_id == series_tmdb_id,
+                    Media.media_type == MediaType.series,
+                )
+            )
+            show_media = show_media_result.scalar_one_or_none()
+            if show_media:
+                rating_result = await db.execute(
+                    select(Rating.season_number, Rating.rating).where(
+                        Rating.user_id == effective_user_id,
+                        Rating.media_id == show_media.id,
+                        Rating.episode_order == "tvdb",
+                        Rating.season_number.isnot(None),
+                    )
+                )
+                season_ratings = dict(rating_result.all())
+
+                user_lists_q = await db.execute(select(UserList.id).where(UserList.user_id == effective_user_id))
+                user_list_ids = [r[0] for r in user_lists_q.all()]
+                if user_list_ids:
+                    season_lists_q = await db.execute(
+                        select(ListItem.season_number, ListItem.list_id).where(
+                            ListItem.media_id == show_media.id,
+                            ListItem.season_number.isnot(None),
+                            ListItem.list_id.in_(user_list_ids),
+                        )
+                    )
+                    for sn_, list_id in season_lists_q.all():
+                        season_list_membership.setdefault(sn_, []).append(list_id)
+
+    season_states: dict = {}
+    season_ep_counts = {
+        season["season_number"]: season.get("episode_count", 0)
+        for season in show_data["seasons"]
+    }
+    for season_number_value in set(
+        list(season_ep_counts)
+        + list(collected_positions)
+        + list(watched_positions)
+    ):
+        collected = len(collected_positions.get(season_number_value, set()))
+        watched = len(watched_positions.get(season_number_value, set()))
+        total = season_ep_counts.get(season_number_value, 0)
+        effective_total = total if total > 0 else collected
+        season_states[season_number_value] = {
+            "in_library": collected > 0,
+            "collection_pct": min(100, int((collected / effective_total) * 100)) if effective_total > 0 else 0,
+            "watched": watched >= effective_total if effective_total > 0 else False,
+            "watch_pct": min(100, int((watched / effective_total) * 100)) if effective_total > 0 else 0,
+            "watch_started": watched > 0,
+            "user_rating": season_ratings.get(season_number_value),
+            "in_lists": season_list_membership.get(season_number_value, []),
+        }
+
+    in_library = bool(season_states and any(v["in_library"] for v in season_states.values()))
+
+    # Derive overall watched / collection_pct from season states (skip season 0 specials)
+    lib_seasons = [v for sn, v in season_states.items() if sn != 0 and v["in_library"]]
+    watched_overall = bool(lib_seasons) and all(v["watched"] for v in lib_seasons)
+    total_pct = sum(v["collection_pct"] for sn, v in season_states.items() if sn != 0)
+    non_special_seasons = len([sn for sn in season_states if sn != 0])
+    collection_pct = int(total_pct / non_special_seasons) if non_special_seasons else 0
+    total_watch_pct = sum(v["watch_pct"] for sn, v in season_states.items() if sn != 0)
+    watch_pct = int(total_watch_pct / non_special_seasons) if non_special_seasons else 0
+    watch_started = any(v["watch_started"] for sn, v in season_states.items() if sn != 0)
+
+    # Sonarr state
+    gs = await _get_global_settings(db)
+    settings_q = await db.execute(select(UserSettings).where(UserSettings.user_id == effective_user_id))
+    settings = settings_q.scalar_one_or_none()
+    sonarr_cfg = _effective_sonarr(settings, gs)
+    is_monitored = False
+    request_enabled = sonarr_cfg is not None
+    if sonarr_cfg:
+        try:
+            import httpx as _httpx
+            url = sonarr_cfg.sonarr_url.rstrip("/")
+            async with _httpx.AsyncClient(timeout=5.0) as client:
+                res = await client.get(
+                    f"{url}/api/v3/series/lookup",
+                    params={"apiKey": sonarr_cfg.sonarr_token, "term": f"tvdb:{tvdb_id}"},
+                )
+                if res.status_code == 200:
+                    for entry in res.json():
+                        if entry.get("id"):
+                            is_monitored = True
+                            break
+        except Exception:
+            pass
+
+    where_to_watch = (
+        await get_where_to_watch(
+            db,
+            effective_user_id,
+            series_tmdb_id,
+            MediaType.series,
+            show=show,
+        )
+        if show and series_tmdb_id
+        else []
+    )
+
+    # Prefer TMDB's networks - they carry the id + logo the /network/{id} link
+    # needs, and a TVDB-ordered show still has a TMDB counterpart here whenever
+    # tmdb_id_cross is set. TVDB's own network list (name only, often empty) is
+    # just the fallback for a show with no TMDB presence at all.
+    if tmdb_show.get("networks"):
+        networks = [
+            {
+                "id": n["id"],
+                "name": n["name"],
+                "logo_path": tmdb.poster_url(n.get("logo_path"), size="w500") if n.get("logo_path") else None,
+                "origin_country": n.get("origin_country"),
+            }
+            for n in tmdb_show["networks"]
+        ]
+    else:
+        networks = [{"id": None, "name": n.get("name"), "logo_path": None, "origin_country": None}
+                    for n in (raw.get("networks") or []) if n.get("name")]
+
+    rewatch_info = None
+    if show:
+        active_rewatch = await get_active_rewatch(db, effective_user_id, show.id)
+        if active_rewatch:
+            progress_ids = await get_rewatch_progress_media_ids(db, active_rewatch.id)
+            rewatch_info = {
+                "started_at": active_rewatch.started_at.isoformat(),
+                "watched": len(progress_ids),
+                "total": total_aired_episodes(show),
+            }
+
+    # Same pattern as get_tvdb_episode - this was previously hardcoded to [],
+    # so a TVDB-ordered show's own page never reflected list membership even
+    # though adding/removing worked correctly against series_tmdb_id underneath.
+    in_lists: list = []
+    if series_tmdb_id:
+        show_state: dict = {"tmdb_id": series_tmdb_id, "type": "series"}
+        await enrich_with_state(db, effective_user_id, [show_state])
+        in_lists = show_state.get("in_lists", [])
+
+    return {
+        **show_data,
+        "id": show.id if show else None,
+        "tmdb_id": series_tmdb_id,
+        "type": "series",
+        "tagline": None,
+        "tmdb_rating": tmdb_show.get("vote_average"),
+        "imdb_id": show_data.get("imdb_id"),
+        "tmdb_id_cross": show_data.get("tmdb_id_cross"),
+        "episode_order": "tvdb",
+        "adult": False,
+        "in_library": in_library,
+        "watched": watched_overall,
+        "rewatch": rewatch_info,
+        "dropped": bool(show and settings and show.id in set(settings.dropped_shows or [])),
+        "in_lists": in_lists,
+        "collection_pct": collection_pct,
+        "watch_pct": watch_pct,
+        "watch_started": watch_started,
+        "is_monitored": is_monitored,
+        "request_enabled": request_enabled,
+        "request_status": None,
+        "user_rating": None,
+        "season_states": season_states,
+        "seasons": {},
+        "seasons_meta": show_data["seasons"],
+        "cast": cast,
+        "networks": networks,
+        "where_to_watch": where_to_watch,
+    }
+
+
+@router.get("/tvdb/{tvdb_id}/season/{season_number}")
+async def get_tvdb_season(
+    tvdb_id: int,
+    season_number: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user_or_api_key),
+):
+    if current_user is None:
+        await require_anon_nav_allowed(db)
+    effective_user_id = current_user.id if current_user else ANON_USER_ID
+
+    api_key = await get_user_tvdb_key(db, effective_user_id)
+    if not api_key:
+        raise HTTPException(status_code=400, detail="TVDB API key not configured")
+
+    metadata_lang = await get_user_metadata_language(db, effective_user_id)
+    tvdb_lang = tvdb_client.tvdb_language(metadata_lang)
+
+    try:
+        raw_series, raw_episodes = await asyncio.gather(
+            tvdb_client.get_series(tvdb_id, api_key),
+            tvdb_client.get_series_episodes(tvdb_id, season_number, api_key, language=tvdb_lang),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"TVDB fetch failed: {e}")
+
+    show_data = tvdb_client.format_series(raw_series, language=tvdb_lang)
+    eps = [tvdb_client.format_episode(e) for e in raw_episodes]
+
+    series_tmdb_id = show_data.get("tmdb_id_cross")
+    series_tmdb_id = int(series_tmdb_id) if series_tmdb_id else None
+    show_result = await db.execute(
+        select(ShowModel).where(
+            or_(
+                ShowModel.tvdb_id == tvdb_id,
+                ShowModel.tmdb_id == series_tmdb_id,
+            )
+        )
+    )
+    show = show_result.scalar_one_or_none()
+    if show is None:
+        if series_tmdb_id:
+            tmdb_api_key_for_show = await get_user_tmdb_key(db, effective_user_id)
+            from routers.webhooks import _find_or_create_show
+            show = await _find_or_create_show(db, series_tmdb_id, tmdb_api_key_for_show)
+        else:
+            # Show has no TMDB presence at all — mirrors the "resolve an
+            # unmatched show to TVDB" flow in routers/sync.py.
+            show = ShowModel(
+                tvdb_id=tvdb_id,
+                tmdb_id=None,
+                title=show_data.get("title") or f"TVDB #{tvdb_id}",
+                original_title=show_data.get("original_title"),
+                overview=show_data.get("overview"),
+                poster_path=show_data.get("poster_path"),
+                backdrop_path=show_data.get("backdrop_path"),
+                status=show_data.get("status"),
+                first_air_date=show_data.get("first_air_date"),
+                last_air_date=show_data.get("last_air_date"),
+                tmdb_data={"seasons": show_data.get("seasons", []), "genres": show_data.get("genres", []), "source": "tvdb"},
+            )
+            db.add(show)
+            await db.flush()
+
+    # Link this Show to its TVDB id (see #101 — mark-as-watched/collect
+    # endpoints only ever look shows up by tmdb_id, so without this they can
+    # never fall back to TVDB for episodes TMDB doesn't have). Also backfill
+    # poster/backdrop/overview from TVDB when TMDB's own entry lacks them —
+    # common for a sparsely-listed show. Never overwrite an existing
+    # different tvdb_id link (it's unique).
+    show_changed = False
+    if not show.tvdb_id:
+        show.tvdb_id = tvdb_id
+        show_changed = True
+    if not show.poster_path and show_data.get("poster_path"):
+        show.poster_path = show_data["poster_path"]
+        show_changed = True
+    if not show.backdrop_path and show_data.get("backdrop_path"):
+        show.backdrop_path = show_data["backdrop_path"]
+        show_changed = True
+    if not show.overview and show_data.get("overview"):
+        show.overview = show_data["overview"]
+        show_changed = True
+    if show_changed:
+        await db.flush()
+        await db.commit()
+
+    mapping_result = await db.execute(
+        select(EpisodeOrderMapping).where(
+            EpisodeOrderMapping.series_tmdb_id == series_tmdb_id,
+            EpisodeOrderMapping.tvdb_season_number == season_number,
+        )
+    ) if series_tmdb_id else None
+    mappings = list(mapping_result.scalars().all()) if mapping_result else []
+    base_season_meta = next(
+        (
+            season
+            for season in show_data["seasons"]
+            if season["season_number"] == season_number
+        ),
+        {},
+    )
+    tmdb_api_key = await get_user_tmdb_key(db, effective_user_id)
+    enriched_seasons, _ = await _enrich_tvdb_seasons(
+        [base_season_meta] if base_season_meta else [],
+        mappings,
+        tvdb_api_key=api_key,
+        tvdb_language=tvdb_lang,
+        series_tmdb_id=series_tmdb_id,
+        tmdb_api_key=tmdb_api_key,
+        metadata_language=metadata_lang,
+    )
+    season_meta = enriched_seasons[0] if enriched_seasons else base_season_meta
+    show_data["seasons"] = [
+        season_meta if season["season_number"] == season_number else season
+        for season in show_data["seasons"]
+    ]
+    _apply_local_artwork_overrides(show, show_data)
+    season_meta = next(
+        (season for season in show_data["seasons"] if season["season_number"] == season_number),
+        season_meta,
+    )
+    mapping_by_tvdb_id = {mapping.tvdb_id: mapping for mapping in mappings}
+    mapping_by_position = {
+        (mapping.tvdb_season_number, mapping.tvdb_episode_number): mapping
+        for mapping in mappings
+    }
+
+    local_ep_map: dict[tuple[int, int], Media] = {}
+    if show:
+        ep_result = await db.execute(
+            select(Media).where(
+                Media.show_id == show.id,
+                Media.media_type == MediaType.episode,
+            )
+        )
+        local_eps = list(ep_result.scalars().all())
+        local_ep_map = {
+            (episode.season_number, episode.episode_number): episode
+            for episode in local_eps
+            if episode.season_number is not None and episode.episode_number is not None
+        }
+
+    mapped_rows: list[tuple[dict, EpisodeOrderMapping | None, Media | None, bool]] = []
+    created_any = False
+    for episode in eps:
+        unmatched_ep = False
+        mapping = mapping_by_tvdb_id.get(episode.get("tvdb_id"))
+        if not mapping:
+            mapping = mapping_by_position.get(
+                (season_number, episode.get("episode_number"))
+            )
+        if mapping:
+            local_episode = local_ep_map.get(
+                (mapping.tmdb_season_number, mapping.tmdb_episode_number)
+            )
+        else:
+            # No mapping for this specific TVDB episode — fall back to matching
+            # by raw position rather than reporting it as missing from the library.
+            local_episode = local_ep_map.get(
+                (season_number, episode.get("episode_number"))
+            )
+            ep_num = episode.get("episode_number")
+            if not local_episode and ep_num is not None:
+                if show.tmdb_id and tmdb_season_covers(show.tmdb_data, season_number, ep_num):
+                    # TMDB plausibly has this episode too, just not matched
+                    # yet — don't guess; point at "Refresh Metadata" instead.
+                    unmatched_ep = True
+                else:
+                    # Confidently absent from TMDB (see #101) — create/enrich
+                    # now so this listing (and mark-as-watched from it) is
+                    # accurate immediately, not just after visiting the
+                    # episode's own detail page.
+                    local_episode = Media(
+                        media_type=MediaType.episode,
+                        show_id=show.id,
+                        season_number=season_number,
+                        episode_number=ep_num,
+                    )
+                    # tmdb_id isn't known until enrich_episode_from_tvdb resolves
+                    # it, so this can't go through create_media_safely up front -
+                    # flushed explicitly here instead, inside a savepoint, so a
+                    # conflict with a concurrently-created row for this exact
+                    # episode is caught right here rather than at the batched
+                    # commit below.
+                    await enrich_episode_from_tvdb(local_episode, episode)
+                    try:
+                        async with db.begin_nested():
+                            db.add(local_episode)
+                            await db.flush()
+                    except IntegrityError:
+                        existing_result = await db.execute(
+                            select(Media)
+                            .where(Media.tmdb_id == local_episode.tmdb_id, Media.media_type == MediaType.episode)
+                            .order_by(Media.id)
+                        )
+                        existing = existing_result.scalars().first()
+                        if not existing:
+                            raise
+                        local_episode = existing
+                    local_ep_map[(season_number, ep_num)] = local_episode
+                    created_any = True
+        mapped_rows.append((episode, mapping, local_episode, unmatched_ep))
+
+    if created_any:
+        await db.commit()
+
+    local_media_ids = list({
+        local_episode.id
+        for _, _, local_episode, _ in mapped_rows
+        if local_episode
+    })
+    watched_ep_ids: set[int] = set()
+    collected_ep_ids: set[int] = set()
+    episode_ratings: dict[int, float] = {}
+    if local_media_ids:
+        active_rewatch = await get_active_rewatch(db, effective_user_id, show.id)
+        if active_rewatch:
+            watched_q = await db.execute(
+                select(RewatchProgress.media_id)
+                .where(
+                    RewatchProgress.rewatch_id == active_rewatch.id,
+                    RewatchProgress.media_id.in_(local_media_ids),
+                )
+                .distinct()
+            )
+        else:
+            watched_q = await db.execute(
+                select(WatchEvent.media_id)
+                .where(
+                    WatchEvent.user_id == effective_user_id,
+                    WatchEvent.media_id.in_(local_media_ids),
+                )
+                .distinct()
+            )
+        watched_ep_ids = {row[0] for row in watched_q.all()}
+        collected_q = await db.execute(
+            select(Collection.media_id)
+            .where(
+                Collection.user_id == effective_user_id,
+                Collection.media_id.in_(local_media_ids),
+            )
+            .distinct()
+        )
+        collected_ep_ids = {row[0] for row in collected_q.all()}
+        episode_ratings_q = await db.execute(
+            select(Rating.media_id, Rating.rating).where(
+                Rating.user_id == effective_user_id,
+                Rating.media_id.in_(local_media_ids),
+                Rating.season_number.is_(None),
+            )
+        )
+        episode_ratings = dict(episode_ratings_q.all())
+
+    season_user_rating = None
+    season_in_lists: list[int] = []
+    if series_tmdb_id:
+        show_media_result = await db.execute(
+            select(Media).where(
+                Media.tmdb_id == series_tmdb_id,
+                Media.media_type == MediaType.series,
+            )
+        )
+        show_media = show_media_result.scalar_one_or_none()
+        if show_media:
+            season_rating_result = await db.execute(
+                select(Rating.rating).where(
+                    Rating.user_id == effective_user_id,
+                    Rating.media_id == show_media.id,
+                    Rating.season_number == season_number,
+                    Rating.episode_order == "tvdb",
+                )
+            )
+            season_user_rating = season_rating_result.scalar_one_or_none()
+
+            season_lists_result = await db.execute(
+                select(ListItem.list_id)
+                .join(UserList, UserList.id == ListItem.list_id)
+                .where(
+                    ListItem.media_id == show_media.id,
+                    ListItem.season_number == season_number,
+                    UserList.user_id == effective_user_id,
+                )
+            )
+            season_in_lists = [r[0] for r in season_lists_result.all()]
+
+    # Batched list membership per episode - same pattern as the TMDB-native
+    # season endpoint above (episode_in_lists). Previously hardcoded to [] for
+    # every episode here, so a TVDB-ordered show's season page never reflected
+    # list membership even though adding/removing worked correctly underneath.
+    ep_resolved_tmdb_ids = [
+        (mapping.tmdb_episode_id if mapping else (local_episode.tmdb_id if local_episode else None))
+        for _episode, mapping, local_episode, _unmatched_ep in mapped_rows
+    ]
+    tvdb_episode_in_lists: dict[int, list[int]] = {}
+    _present_ep_tmdb_ids = [tid for tid in ep_resolved_tmdb_ids if tid]
+    if _present_ep_tmdb_ids:
+        user_lists_q = await db.execute(select(UserList.id).where(UserList.user_id == effective_user_id))
+        user_list_ids = [r[0] for r in user_lists_q.all()]
+        if user_list_ids:
+            ep_lists_q = await db.execute(
+                select(Media.tmdb_id, ListItem.list_id)
+                .join(ListItem, ListItem.media_id == Media.id)
+                .where(
+                    Media.tmdb_id.in_(_present_ep_tmdb_ids),
+                    Media.media_type == MediaType.episode,
+                    ListItem.list_id.in_(user_list_ids),
+                )
+                .distinct()
+            )
+            for ep_tmdb_id, list_id in ep_lists_q.all():
+                tvdb_episode_in_lists.setdefault(ep_tmdb_id, []).append(list_id)
+
+    enriched_eps = []
+    for (episode, mapping, local_episode, unmatched_ep), ep_tmdb_id in zip(mapped_rows, ep_resolved_tmdb_ids):
+        enriched_eps.append({
+            **episode,
+            "id": local_episode.id if local_episode else None,
+            "tmdb_id": ep_tmdb_id,
+            "show_tmdb_id": series_tmdb_id,
+            "tmdb_season_number": mapping.tmdb_season_number if mapping else season_number,
+            "tmdb_episode_number": mapping.tmdb_episode_number if mapping else episode.get("episode_number"),
+            "unmatched": unmatched_ep,
+            "in_library": local_episode.id in collected_ep_ids if local_episode else False,
+            "watched": local_episode.id in watched_ep_ids if local_episode else False,
+            "user_rating": episode_ratings.get(local_episode.id) if local_episode else None,
+            "in_lists": tvdb_episode_in_lists.get(ep_tmdb_id, []) if ep_tmdb_id else [],
+        })
+
+    if season_user_rating is None:
+        season_user_rating = _rounded_whole_star_rating(
+            [episode.get("user_rating") for episode in enriched_eps]
+        )
+
+    total_eps = len(eps)
+    season_in_library = bool(collected_ep_ids)
+    season_collection_pct = min(100, int((len(collected_ep_ids) / total_eps) * 100)) if total_eps else 0
+    season_watched = total_eps > 0 and len(watched_ep_ids) >= total_eps
+    season_watch_pct = min(100, int((len(watched_ep_ids) / total_eps) * 100)) if total_eps else 0
+    season_watch_started = len(watched_ep_ids) > 0
+
+    return {
+        "tvdb_id": tvdb_id,
+        "season_number": season_number,
+        "name": season_meta.get("name") or f"Season {season_number}",
+        "overview": season_meta.get("overview"),
+        "tmdb_rating": season_meta.get("tmdb_rating"),
+        "poster_path": season_meta.get("poster_path"),
+        "backdrop_path": show_data["backdrop_path"],
+        "air_date": season_meta.get("air_date"),
+        "episodes": enriched_eps,
+        "season_in_library": season_in_library,
+        "season_watched": season_watched,
+        "season_watch_pct": season_watch_pct,
+        "season_watch_started": season_watch_started,
+        "season_collection_pct": season_collection_pct,
+        "season_user_rating": season_user_rating,
+        "season_in_lists": season_in_lists,
+        "show_in_library": show is not None,
+        "show": {
+            "id": show.id if show else None,
+            "tvdb_id": tvdb_id,
+            "tmdb_id": series_tmdb_id,
+            "episode_order": "tvdb",
+            "title": show_data["title"],
+            "poster_path": show_data["poster_path"],
+            "backdrop_path": show_data["backdrop_path"],
+            "seasons_meta": show_data["seasons"],
+        },
+    }
+
+
+@router.get("/tvdb/{tvdb_id}/season/{season_number}/episode/{episode_number}")
+async def get_tvdb_episode(
+    tvdb_id: int,
+    season_number: int,
+    episode_number: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user_or_api_key),
+):
+    if current_user is None:
+        await require_anon_nav_allowed(db)
+    effective_user_id = current_user.id if current_user else ANON_USER_ID
+
+    api_key = await get_user_tvdb_key(db, effective_user_id)
+    if not api_key:
+        raise HTTPException(status_code=400, detail="TVDB API key not configured")
+
+    metadata_lang = await get_user_metadata_language(db, effective_user_id)
+    tvdb_lang = tvdb_client.tvdb_language(metadata_lang)
+
+    try:
+        raw_series, raw_episodes = await asyncio.gather(
+            tvdb_client.get_series(tvdb_id, api_key),
+            tvdb_client.get_series_episodes(tvdb_id, season_number, api_key, language=tvdb_lang),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"TVDB fetch failed: {e}")
+
+    show_data = tvdb_client.format_series(raw_series, language=tvdb_lang)
+    eps = [tvdb_client.format_episode(e) for e in raw_episodes]
+    ep_data = next((e for e in eps if e.get("episode_number") == episode_number), None)
+    if not ep_data:
+        raise HTTPException(status_code=404, detail="Episode not found")
+
+    series_tmdb_id = show_data.get("tmdb_id_cross")
+    series_tmdb_id = int(series_tmdb_id) if series_tmdb_id else None
+    show_result = await db.execute(
+        select(ShowModel).where(
+            or_(
+                ShowModel.tvdb_id == tvdb_id,
+                ShowModel.tmdb_id == series_tmdb_id,
+            )
+        )
+    )
+    show = show_result.scalar_one_or_none()
+    if show is None:
+        if series_tmdb_id:
+            tmdb_api_key = await get_user_tmdb_key(db, effective_user_id)
+            from routers.webhooks import _find_or_create_show
+            show = await _find_or_create_show(db, series_tmdb_id, tmdb_api_key)
+        else:
+            # Show has no TMDB presence at all — mirrors the "resolve an
+            # unmatched show to TVDB" flow in routers/sync.py.
+            show = ShowModel(
+                tvdb_id=tvdb_id,
+                tmdb_id=None,
+                title=show_data.get("title") or f"TVDB #{tvdb_id}",
+                original_title=show_data.get("original_title"),
+                overview=show_data.get("overview"),
+                poster_path=show_data.get("poster_path"),
+                backdrop_path=show_data.get("backdrop_path"),
+                status=show_data.get("status"),
+                first_air_date=show_data.get("first_air_date"),
+                last_air_date=show_data.get("last_air_date"),
+                tmdb_data={"seasons": show_data.get("seasons", []), "genres": show_data.get("genres", []), "source": "tvdb"},
+            )
+            db.add(show)
+            await db.flush()
+
+    # Link this Show to its TVDB id (found-via-tmdb_id and _find_or_create_show
+    # both leave it unset) so mark-as-watched/collect endpoints — which only
+    # ever look shows up by tmdb_id — can still fall back to TVDB for episodes
+    # TMDB doesn't have (see #101). Also backfill poster/backdrop/overview
+    # from TVDB when TMDB's own entry lacks them — common for a sparsely-
+    # listed show. Never overwrite an existing different tvdb_id link.
+    show_changed = False
+    if not show.tvdb_id:
+        show.tvdb_id = tvdb_id
+        show_changed = True
+    if not show.poster_path and show_data.get("poster_path"):
+        show.poster_path = show_data["poster_path"]
+        show_changed = True
+    if not show.backdrop_path and show_data.get("backdrop_path"):
+        show.backdrop_path = show_data["backdrop_path"]
+        show_changed = True
+    if not show.overview and show_data.get("overview"):
+        show.overview = show_data["overview"]
+        show_changed = True
+    if show_changed:
+        await db.flush()
+        await db.commit()
+
+    mapping_result = await db.execute(
+        select(EpisodeOrderMapping).where(
+            EpisodeOrderMapping.series_tmdb_id == series_tmdb_id,
+            or_(
+                EpisodeOrderMapping.tvdb_id == ep_data.get("tvdb_id"),
+                and_(
+                    EpisodeOrderMapping.tvdb_season_number == season_number,
+                    EpisodeOrderMapping.tvdb_episode_number == episode_number,
+                ),
+            ),
+        )
+    ) if series_tmdb_id else None
+    mapping = mapping_result.scalars().first() if mapping_result else None
+
+    # No computed mapping — figure out whether this episode is confidently
+    # absent from TMDB (safe to enrich straight from TVDB and track locally)
+    # or merely unmapped-but-maybe-present (ambiguous; don't guess numbers).
+    unmatched = False
+    if mapping:
+        canonical_season = mapping.tmdb_season_number
+        canonical_episode = mapping.tmdb_episode_number
+    else:
+        if show.tmdb_id and tmdb_season_covers(show.tmdb_data, season_number, episode_number):
+            # TMDB plausibly has this episode too, just not matched yet — don't
+            # guess; the frontend points the user at the "refresh"/match action.
+            # (show.tmdb_id gates this: without it there's no real TMDB show to
+            # check against — show.tmdb_data may just be cached TVDB season
+            # data from the bare-show-creation branch above, which would
+            # trivially "cover" every TVDB episode and defeat this check.)
+            canonical_season = season_number
+            canonical_episode = episode_number
+            unmatched = True
+        else:
+            # Confidently absent from TMDB (issue #101's exact scenario) —
+            # create/enrich a local Media row keyed by the raw TVDB numbers so
+            # it can be watched/rated/collected like any other episode.
+            new_ep_q = await db.execute(
+                select(Media).where(
+                    Media.show_id == show.id,
+                    Media.media_type == MediaType.episode,
+                    Media.season_number == season_number,
+                    Media.episode_number == episode_number,
+                )
+            )
+            new_ep = new_ep_q.scalars().first()
+            if not new_ep:
+                new_ep = Media(
+                    media_type=MediaType.episode,
+                    show_id=show.id,
+                    season_number=season_number,
+                    episode_number=episode_number,
+                )
+                # tmdb_id isn't known until enrich_episode_from_tvdb resolves
+                # it, so this can't go through create_media_safely up front -
+                # flushed explicitly here instead, inside a savepoint, so a
+                # conflict with a concurrently-created row for this exact
+                # episode is caught right here instead of crashing db.commit().
+                await enrich_episode_from_tvdb(new_ep, ep_data)
+                try:
+                    async with db.begin_nested():
+                        db.add(new_ep)
+                        await db.flush()
+                except IntegrityError:
+                    existing_result = await db.execute(
+                        select(Media)
+                        .where(Media.tmdb_id == new_ep.tmdb_id, Media.media_type == MediaType.episode)
+                        .order_by(Media.id)
+                    )
+                    existing = existing_result.scalars().first()
+                    if not existing:
+                        raise
+                    new_ep = existing
+                await db.commit()
+            canonical_season = season_number
+            canonical_episode = episode_number
+
+    in_library = False
+    watched = False
+    user_rating = None
+    local_ep_id = None
+    local_ep = None
+    library_info = None
+    play_count = 0
+
+    if show and not unmatched:
+        local_ep_q = await db.execute(
+            select(Media).where(
+                Media.show_id == show.id,
+                Media.media_type == MediaType.episode,
+                Media.season_number == canonical_season,
+                Media.episode_number == canonical_episode,
+            )
+        )
+        local_ep = local_ep_q.scalars().first()
+        if local_ep:
+            local_ep_id = local_ep.id
+            coll_q = await db.execute(
+                select(func.count()).select_from(Collection).where(
+                    Collection.media_id == local_ep.id,
+                    Collection.user_id == effective_user_id,
+                )
+            )
+            in_library = coll_q.scalar_one() > 0
+            active_rewatch = await get_active_rewatch(db, effective_user_id, show.id)
+            if active_rewatch:
+                watched_q = await db.execute(
+                    select(func.count()).select_from(RewatchProgress).where(
+                        RewatchProgress.media_id == local_ep.id,
+                        RewatchProgress.rewatch_id == active_rewatch.id,
+                    )
+                )
+            else:
+                watched_q = await db.execute(
+                    select(func.count()).select_from(WatchEvent).where(
+                        WatchEvent.media_id == local_ep.id,
+                        WatchEvent.user_id == effective_user_id,
+                    )
+                )
+            play_count = watched_q.scalar_one()
+            watched = play_count > 0
+            rating_q = await db.execute(
+                select(Rating.rating).where(
+                    Rating.media_id == local_ep.id,
+                    Rating.user_id == effective_user_id,
+                    Rating.season_number.is_(None),
+                )
+            )
+            user_rating = rating_q.scalar_one_or_none()
+
+            if in_library:
+                coll_file_q = await db.execute(
+                    select(CollectionFile)
+                    .join(Collection, Collection.id == CollectionFile.collection_id)
+                    .where(
+                        Collection.media_id == local_ep.id,
+                        Collection.user_id == effective_user_id,
+                    )
+                    # Rows from sources with no file details (Nuvio, Stremio) carry no
+                    # quality at all, so keep them behind real files or the badge blanks out.
+                    .order_by(CollectionFile.resolution.is_(None).asc(), CollectionFile.added_at.desc())
+                )
+                coll_file = coll_file_q.scalars().first()
+                if coll_file:
+                    library_info = {
+                        "resolution": coll_file.resolution,
+                        "video_codec": coll_file.video_codec,
+                        "audio_codec": coll_file.audio_codec,
+                        "audio_channels": coll_file.audio_channels,
+                        "audio_languages": coll_file.audio_languages,
+                        "subtitle_languages": coll_file.subtitle_languages,
+                    }
+
+    cast = tvdb_client.format_cast(raw_series)
+    season_meta = next((s for s in show_data["seasons"] if s["season_number"] == season_number), {})
+
+    resolved_tmdb_id = mapping.tmdb_episode_id if mapping else (
+        local_ep.tmdb_id if local_ep else None
+    )
+    # Same pattern as get_episode_detail's TMDB-native sibling - this was
+    # previously hardcoded to [], so a TVDB-ordered show's episode page never
+    # reflected list membership even though adding/removing worked correctly
+    # against the resolved tmdb_id underneath.
+    in_lists: list = []
+    if resolved_tmdb_id:
+        ep_state: dict = {"tmdb_id": resolved_tmdb_id, "type": "episode"}
+        await enrich_with_state(db, effective_user_id, [ep_state])
+        in_lists = ep_state.get("in_lists", [])
+
+    return {
+        **ep_data,
+        "id": local_ep_id,
+        "tmdb_id": resolved_tmdb_id,
+        "show_tmdb_id": series_tmdb_id,
+        "tmdb_season_number": canonical_season,
+        "tmdb_episode_number": canonical_episode,
+        "unmatched": unmatched,
+        "in_library": in_library,
+        "watched": watched,
+        "user_rating": user_rating,
+        "play_count": play_count,
+        "in_lists": in_lists,
+        "library": library_info,
+        "cast": cast,
+        "episodes": [{"episode_number": e["episode_number"], "name": e["name"]} for e in eps],
+        "show": {
+            "id": show.id if show else None,
+            "tvdb_id": tvdb_id,
+            "tmdb_id": series_tmdb_id,
+            "episode_order": "tvdb",
+            "title": show_data["title"],
+            "poster_path": show_data["poster_path"],
+            "backdrop_path": show_data["backdrop_path"],
+        },
+        "season": {
+            "name": season_meta.get("name") or f"Season {season_number}",
+            "season_number": season_number,
+            "poster_path": season_meta.get("poster_path"),
+        },
+    }
+
+
+@router.post("/tvdb/{tvdb_id}/refresh")
+async def refresh_tvdb_show_metadata(
+    tvdb_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    api_key = await get_user_tvdb_key(db, current_user.id)
+    if not api_key:
+        raise HTTPException(status_code=400, detail="TVDB API key not configured")
+
+    show_result = await db.execute(select(ShowModel).where(ShowModel.tvdb_id == tvdb_id))
+    show = show_result.scalar_one_or_none()
+    if not show:
+        raise HTTPException(status_code=404, detail="Show not found in local library")
+
+    try:
+        # cache_ttl=None: this is the user explicitly asking for fresh data -
+        # see the matching comment on refresh_show_metadata's tmdb.get_show call.
+        raw = await tvdb_client.get_series(tvdb_id, api_key, cache_ttl=None)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"TVDB fetch failed: {e}")
+
+    metadata_lang = await get_user_metadata_language(db, current_user.id)
+    tvdb_lang = tvdb_client.tvdb_language(metadata_lang)
+
+    if show.tmdb_id:
+        tmdb_api_key = await get_user_tmdb_key(db, current_user.id)
+        if not check_tmdb_key(tmdb_api_key):
+            raise HTTPException(status_code=400, detail="TMDB API key not configured")
+        try:
+            mapping = await ensure_episode_order_mapping(
+                db,
+                show.tmdb_id,
+                tmdb_api_key,
+                api_key,
+                force=True,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Episode mapping failed: {exc}")
+        await db.commit()
+        return {
+            "message": "Episode mapping refreshed successfully",
+            "mapping": mapping,
+        }
+
+    show_fmt = tvdb_client.format_series(raw, language=tvdb_lang)
+    show.title = show_fmt["title"] or show.title
+    show.original_title = show_fmt.get("original_title")
+    show.overview = show_fmt.get("overview")
+    show.poster_path = show_fmt.get("poster_path")
+    show.backdrop_path = show_fmt.get("backdrop_path")
+    show.status = show_fmt.get("status")
+    show.first_air_date = show_fmt.get("first_air_date")
+    show.last_air_date = show_fmt.get("last_air_date")
+    show.tmdb_data = {
+        **(show.tmdb_data or {}),
+        "seasons": show_fmt.get("seasons", []),
+        "genres": show_fmt.get("genres", []),
+        "source": "tvdb",
+    }
+    await db.commit()
+    return {"message": "Metadata refreshed successfully"}
