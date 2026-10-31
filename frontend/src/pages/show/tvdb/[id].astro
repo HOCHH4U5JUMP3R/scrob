@@ -34,6 +34,7 @@ const seasons = (show?.seasons_meta ?? []).filter(
 // anything not aired yet don't count here.
 const seasonCount = countAiredRegularSeasons(show?.seasons_meta ?? []);
 const year = show?.first_air_date?.slice(0, 4) ?? null;
+const rating = show?.user_rating != null ? Number(show.user_rating).toFixed(1) : null;
 const langNames = new Intl.DisplayNames(["en"], { type: "language" });
 const originalLanguage = show?.original_language
   ? langNames.of(show.original_language) ?? show.original_language
@@ -120,6 +121,11 @@ const backdropSrc = tmdbImageUrl(show?.backdrop_path, "w1280");
             <div class="flex flex-wrap items-center gap-3 mb-10">
               <div class="flex flex-wrap items-center gap-4 text-zinc-300 text-sm bg-zinc-900/40 p-3 rounded-xl border border-zinc-800/50 backdrop-blur-sm">
                 {year && <span class="font-bold">{year}</span>}
+                {rating && (
+                  <span class="flex items-center gap-1.5 text-yellow-400 font-black">
+                    <span class="text-lg leading-none">★</span> {rating}
+                  </span>
+                )}
                 <span class="font-medium text-zinc-400">{seasonCount} Season{seasonCount !== 1 ? "s" : ""}</span>
                 {show.age_rating && (
                   <span class="px-2 py-0.5 border border-zinc-600 rounded text-[10px] font-black text-zinc-400 tracking-widest">
