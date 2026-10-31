@@ -2277,6 +2277,7 @@ async def get_tvdb_show(
     collected_positions: dict[int, set[int]] = {}
     watched_positions: dict[int, set[int]] = {}
     season_ratings: dict[int, float] = {}
+    episode_ratings_by_tvdb_season: dict[int, list[float]] = {}
     season_list_membership: dict[int, list[int]] = {}
     if show:
         local_eps_result = await db.execute(
@@ -2371,7 +2372,6 @@ async def get_tvdb_show(
                         Rating.season_number.is_(None),
                     )
                 )
-                episode_ratings_by_tvdb_season: dict[int, list[float]] = {}
                 for tmdb_season, tmdb_episode, episode_rating in episode_rating_result.all():
                     mapping = mapping_by_tmdb.get((tmdb_season, tmdb_episode))
                     display_season = (
