@@ -1010,19 +1010,47 @@ async def get_show(
                 for ep_list in seasons.values():
                     apply_media_translations(ep_list, ep_trans)
 
-        # Derive missing season ratings from the user's rated episodes, then
-        # derive a missing show rating from those season ratings. Explicit
-        # ratings always take precedence over the automatic fallback.
-        for season_key, episode_items in seasons.items():
-            try:
-                season_number_value = int(str(season_key).removeprefix("season_"))
-            except (TypeError, ValueError):
-                continue
+        # Derive missing season ratings from rated episodes. Media rows and
+        # their ratings use canonical TMDB positions, while season_states
+        # uses the selected display order. Translate episode positions
+        # before grouping whenever the user selected TVDB ordering.
+        episode_ratings_by_season: dict[int, list[float]] = {}
+        if selected_episode_order == "tvdb":
+            mappings_q = await db.execute(
+                select(
+                    EpisodeOrderMapping.tmdb_season_number,
+                    EpisodeOrderMapping.tmdb_episode_number,
+                    EpisodeOrderMapping.tvdb_season_number,
+                ).where(
+                    EpisodeOrderMapping.series_tmdb_id == series_tmdb_id,
+                    EpisodeOrderMapping.tvdb_season_number.isnot(None),
+                )
+            )
+            tvdb_season_by_tmdb_position = {
+                (tmdb_season, tmdb_episode): tvdb_season
+                for tmdb_season, tmdb_episode, tvdb_season in mappings_q.all()
+            }
+            for (tmdb_season, tmdb_episode), rating in episode_user_ratings.items():
+                display_season = tvdb_season_by_tmdb_position.get(
+                    (tmdb_season, tmdb_episode)
+                )
+                if display_season is not None and rating is not None:
+                    episode_ratings_by_season.setdefault(display_season, []).append(rating)
+        else:
+            for (season_number_value, _episode_number), rating in episode_user_ratings.items():
+                if season_number_value is not None and rating is not None:
+                    episode_ratings_by_season.setdefault(
+                        season_number_value, []
+                    ).append(rating)
+
+        # Explicit season ratings always win; derived ratings fill only gaps.
+        for season_number_value, ratings in episode_ratings_by_season.items():
             season_state = season_states.setdefault(season_number_value, {})
             if season_state.get("user_rating") is None:
-                season_state["user_rating"] = _rounded_whole_star_rating(
-                    [episode.get("user_rating") for episode in episode_items]
-                )
+                season_state["user_rating"] = _rounded_whole_star_rating(ratings)
+
+        # The series rating is the average of the displayed season ratings,
+        # regardless of whether those ratings were explicit or derived.
         if state_item.get("user_rating") is None:
             state_item["user_rating"] = _rounded_whole_star_rating(
                 [
