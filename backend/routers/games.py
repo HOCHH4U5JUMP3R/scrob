@@ -305,7 +305,7 @@ async def create_game_activity(
         raise HTTPException(status_code=422, detail="Datum oder Uhrzeit ist ungültig.")
     activity = GamePlayActivity(
         user_id=current_user.id, game_id=game_id, platform=platform,
-        played_at=played_at, duration_minutes=0 if payload.get("history_only") else duration, source="history" if payload.get("history_only") else "manual",
+        played_at=played_at, duration_minutes=duration, source="history" if payload.get("history_only") else "manual",
     )
     db.add(activity)
     await db.commit()
@@ -351,8 +351,6 @@ async def update_game_activity(
         if duration < 0 or duration > 1000000:
             raise HTTPException(status_code=422, detail="Die Spielzeit liegt außerhalb des erlaubten Bereichs.")
         activity.duration_minutes = duration
-    if activity.source == "history":
-        activity.duration_minutes = 0
     if "played_at" in payload:
         try:
             value = payload["played_at"]
