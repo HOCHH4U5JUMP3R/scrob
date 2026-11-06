@@ -440,7 +440,7 @@ const latestPlayed = stats
       platform: activityPlatform.value,
       played_at: dateValue ? new Date(dateValue).toISOString() : null,
       duration_minutes: activityHistoryOnly?.checked ? 0 : Number(activityDuration.value || 0),
-      history_only: Boolean(activityHistoryOnly?.checked),
+      ...(activityHistoryOnly?.disabled ? {} : { history_only: Boolean(activityHistoryOnly?.checked) }),
     };
     const activityId = activityForm.dataset.activityId;
     const url = activityId
