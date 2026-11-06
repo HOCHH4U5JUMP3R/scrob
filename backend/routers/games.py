@@ -305,7 +305,7 @@ async def create_game_activity(
         raise HTTPException(status_code=422, detail="Datum oder Uhrzeit ist ungültig.")
     activity = GamePlayActivity(
         user_id=current_user.id, game_id=game_id, platform=platform,
-        played_at=played_at, duration_minutes=duration, source="manual",
+        played_at=played_at, duration_minutes=0 if payload.get("history_only") else duration, source="history" if payload.get("history_only") else "manual",
     )
     db.add(activity)
     await db.commit()
@@ -334,20 +334,25 @@ async def update_game_activity(
         platform = str(payload["platform"] or "").strip()
         if not platform or len(platform) > 32:
             raise HTTPException(status_code=422, detail="Bitte eine gültige Plattform auswählen.")
-        if activity.source != "manual" and normalize_game_platform(platform) != normalize_game_platform(activity.platform):
+        if activity.source not in ("manual", "history") and normalize_game_platform(platform) != normalize_game_platform(activity.platform):
             raise HTTPException(status_code=422, detail="Die Plattform synchronisierter Aktivitäten kann nicht geändert werden.")
         activity.platform = platform
+    if "history_only" in payload:
+        if activity.source not in ("manual", "history"):
+            raise HTTPException(status_code=422, detail="Synchronisierte Aktivitäten können nicht in reine Verlaufseinträge umgewandelt werden.")
+        activity.source = "history" if payload["history_only"] else "manual"
     if "duration_minutes" in payload:
         try:
             raw_duration = payload["duration_minutes"]
             duration = int(raw_duration)
-            if str(raw_duration).strip() != str(duration):
-                raise ValueError
+            if str(raw_duration).strip() != str(duration): raise ValueError
         except (TypeError, ValueError):
             raise HTTPException(status_code=422, detail="Die Spielzeit muss eine ganze Minutenzahl sein.")
         if duration < 0 or duration > 1000000:
             raise HTTPException(status_code=422, detail="Die Spielzeit liegt außerhalb des erlaubten Bereichs.")
         activity.duration_minutes = duration
+    if activity.source == "history":
+        activity.duration_minutes = 0
     if "played_at" in payload:
         try:
             value = payload["played_at"]
