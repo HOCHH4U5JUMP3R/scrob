@@ -304,7 +304,7 @@ const { token } = Astro.locals;
     finally { steamCsvButton.disabled = false; }
   });
 
-  document.getElementById("steam-connect-btn")?.addEventListener("click", async () => {  document.getElementById("steam-connect-btn")?.addEventListener("click", async () => {
+  document.getElementById("steam-connect-btn")?.addEventListener("click", async () => {
     const button = document.getElementById("steam-connect-btn");
     button.disabled = true;
     setSteamMessage("Opening Steam sign-in…");
