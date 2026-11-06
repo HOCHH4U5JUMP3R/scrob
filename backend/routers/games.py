@@ -186,11 +186,16 @@ async def update_manual_pc_game(
     result = await db.execute(select(GameUserStats).where(
         GameUserStats.user_id == current_user.id,
         GameUserStats.game_id == game_id,
-        GameUserStats.platform == "PC",
+        GameUserStats.platform.in_(("steam", "PC")),
     ))
-    stats = result.scalar_one_or_none()
+    matching_stats = result.scalars().all()
+    # CSV-imported Steam games store their statistics under "steam";
+    # manually tracked PC games use "PC". Prefer Steam when both exist.
+    stats = next((item for item in matching_stats if item.platform == "steam"), None)
     if stats is None:
-        raise HTTPException(status_code=404, detail="Kein manuell verwaltetes PC-Spiel gefunden.")
+        stats = next((item for item in matching_stats if item.platform == "PC"), None)
+    if stats is None:
+        raise HTTPException(status_code=404, detail="Keine bearbeitbaren PC- oder Steam-Erfolge für dieses Spiel gefunden.")
 
     if "achievements_defined" in payload or "achievements_earned" in payload:
         def count_value(key: str, current: int) -> int:
