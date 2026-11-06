@@ -36,8 +36,13 @@ const trophyValue = (t: any, key: string) => Number(t?.[key] ?? t?.[key.toLowerC
 const xboxStats = stats.filter((s: any) => isXboxPlatform(s.platform));
 const pcStats = stats.filter((s: any) => isPCPlatform(s.platform));
 const hasNonXboxStats = stats.some((s: any) => !isXboxPlatform(s.platform));
-const pcAchievementsEarned = pcStats.reduce((sum: number, s: any) => sum + trophyValue(s.trophies_earned, "achievements"), 0);
-const pcAchievementsDefined = pcStats.reduce((sum: number, s: any) => sum + trophyValue(s.trophies_defined, "achievements"), 0);
+// The editor targets one achievement record: prefer imported Steam stats,
+ // otherwise use the manually maintained PC record.
+const editablePcStats = pcStats.find((s: any) => String(s.platform).toLowerCase() === "steam")
+  ?? pcStats.find((s: any) => String(s.platform).toLowerCase() === "pc")
+  ?? pcStats[0];
+const pcAchievementsEarned = trophyValue(editablePcStats?.trophies_earned, "achievements");
+const pcAchievementsDefined = trophyValue(editablePcStats?.trophies_defined, "achievements");
 const xboxGamerscoreEarned = xboxStats.reduce((sum: number, s: any) => sum + trophyValue(s.trophies_earned, "gamerscore"), 0);
 const xboxGamerscoreDefined = xboxStats.reduce((sum: number, s: any) => sum + trophyValue(s.trophies_defined, "gamerscore"), 0);
 const xboxProgress = xboxGamerscoreDefined > 0 ? Math.floor(xboxGamerscoreEarned / xboxGamerscoreDefined * 100) : 0;
