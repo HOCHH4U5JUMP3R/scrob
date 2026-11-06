@@ -279,6 +279,10 @@ const latestPlayed = stats
             <label class="text-xs text-zinc-400">Spielzeit (Minuten)
               <input id="activity-duration" name="duration_minutes" type="number" min="0" max="1000000" step="1" value="0" required class="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 p-2 text-sm text-white" />
             </label>
+            <label class="flex items-center gap-2 text-xs text-zinc-400 sm:col-span-2 lg:col-span-4">
+              <input id="activity-history-only" type="checkbox" class="rounded border-zinc-700 bg-zinc-950" />
+              Nur Verlauf nachpflegen (ändert die Gesamtspielzeit nicht)
+            </label>
             <div class="flex items-end"><button id="activity-submit" class="w-full rounded-lg bg-sky-600 hover:bg-sky-500 px-4 py-2 text-sm font-bold text-white" type="submit">Aktivität speichern</button></div>
           </form>
           <p id="game-activity-message" class="text-xs text-zinc-500 mt-3" role="status" aria-live="polite"></p>
@@ -378,6 +382,7 @@ const latestPlayed = stats
   const activityPlatform = document.getElementById("activity-platform");
   const activityDate = document.getElementById("activity-played-at");
   const activityDuration = document.getElementById("activity-duration");
+  const activityHistoryOnly = document.getElementById("activity-history-only");
   const activityTitle = document.getElementById("activity-form-title");
   const activitySubmit = document.getElementById("activity-submit");
   const cancelEdit = document.getElementById("cancel-activity-edit");
@@ -392,6 +397,9 @@ const latestPlayed = stats
     if (!activityForm) return;
     delete activityForm.dataset.activityId;
     activityPlatform.disabled = false;
+    activityHistoryOnly.disabled = false;
+    activityHistoryOnly.checked = false;
+    activityDuration.disabled = false;
     activityForm.reset();
     activityDate.value = toLocalInput("");
     activityTitle.textContent = "Spielaktivität hinzufügen";
@@ -401,6 +409,7 @@ const latestPlayed = stats
   };
   if (activityDate) activityDate.value = toLocalInput("");
   cancelEdit?.addEventListener("click", resetActivityForm);
+  activityHistoryOnly?.addEventListener("change", () => { activityDuration.disabled = activityHistoryOnly.checked; if (activityHistoryOnly.checked) activityDuration.value = "0"; });
   document.querySelectorAll(".edit-game-activity").forEach((button) => {
     button.addEventListener("click", () => {
       if (!activityForm) return;
@@ -410,6 +419,10 @@ const latestPlayed = stats
       if (!optionExists) activityPlatform.add(new Option(platform, platform));
       activityPlatform.value = platform;
       activityDate.value = toLocalInput(button.getAttribute("data-date") || "");
+      const source = button.getAttribute("data-source") || "manual";
+      activityHistoryOnly.checked = source === "history";
+      activityHistoryOnly.disabled = !["manual", "history"].includes(source);
+      activityDuration.disabled = activityHistoryOnly.checked;
       activityDuration.value = button.getAttribute("data-duration") || "0";
       activityForm.dataset.activityId = button.getAttribute("data-id") || "";
       activityTitle.textContent = "Spielaktivität bearbeiten";
@@ -426,7 +439,8 @@ const latestPlayed = stats
     const payload = {
       platform: activityPlatform.value,
       played_at: dateValue ? new Date(dateValue).toISOString() : null,
-      duration_minutes: Number(activityDuration.value || 0),
+      duration_minutes: activityHistoryOnly?.checked ? 0 : Number(activityDuration.value || 0),
+      history_only: Boolean(activityHistoryOnly?.checked),
     };
     const activityId = activityForm.dataset.activityId;
     const url = activityId
