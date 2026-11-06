@@ -79,7 +79,7 @@ def test_manual_and_edited_activity_adjustments_are_combined_by_platform():
 def test_history_only_activity_counts_as_play_without_changing_playtime():
     played_at = datetime(2020, 5, 12, 19, 0)
     result = build_activity_adjustments([
-        activity(platform="Steam", duration=0, source="history", played_at=played_at),
+        activity(platform="Steam", duration=95, source="history", played_at=played_at),
     ])
     entry = result[(7, "PC")]
     assert entry["playtime_delta"] == 0
