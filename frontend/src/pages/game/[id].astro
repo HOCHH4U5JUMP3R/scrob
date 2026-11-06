@@ -409,7 +409,7 @@ const latestPlayed = stats
   };
   if (activityDate) activityDate.value = toLocalInput("");
   cancelEdit?.addEventListener("click", resetActivityForm);
-  activityHistoryOnly?.addEventListener("change", () => { activityDuration.disabled = activityHistoryOnly.checked; if (activityHistoryOnly.checked) activityDuration.value = "0"; });
+  activityHistoryOnly?.addEventListener("change", () => { activityDuration.disabled = false; });
   document.querySelectorAll(".edit-game-activity").forEach((button) => {
     button.addEventListener("click", () => {
       if (!activityForm) return;
@@ -439,7 +439,7 @@ const latestPlayed = stats
     const payload = {
       platform: activityPlatform.value,
       played_at: dateValue ? new Date(dateValue).toISOString() : null,
-      duration_minutes: activityHistoryOnly?.checked ? 0 : Number(activityDuration.value || 0),
+      duration_minutes: Number(activityDuration.value || 0),
       ...(activityHistoryOnly?.disabled ? {} : { history_only: Boolean(activityHistoryOnly?.checked) }),
     };
     const activityId = activityForm.dataset.activityId;
