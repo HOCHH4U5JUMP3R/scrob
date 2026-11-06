@@ -15,6 +15,8 @@ def build_activity_adjustments(activities) -> dict:
         if activity.source == "manual":
             entry["playtime_delta"] += duration
             entry["manual_activity_count"] += 1
+        elif activity.source == "history":
+            entry["manual_activity_count"] += 1
         elif activity.playtime_before_minutes is not None and activity.playtime_after_minutes is not None:
             original_delta = max(0, int(activity.playtime_after_minutes) - int(activity.playtime_before_minutes))
             entry["playtime_delta"] += duration - original_delta
