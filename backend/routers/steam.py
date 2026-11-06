@@ -1,7 +1,9 @@
 import asyncio
+import csv
+import io
 import logging
 import secrets
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from urllib.parse import parse_qsl, urlparse
@@ -16,6 +18,7 @@ from core.game_stats import record_game_play_activity
 from db import async_sessionmaker, engine, get_db
 from dependencies import get_current_user
 from models.games import Game, GamePlatform, GameUserStats
+from models.game_play_activity import GamePlayActivity
 from models.sync import SyncJob, SyncStatus
 from models.users import User, UserSettings
 
@@ -282,6 +285,99 @@ async def run_steam_sync(user_id: int, job_id: int) -> None:
                 )
             )
             await db.commit()
+
+
+@router.post("/import-csv")
+async def import_csv(payload: dict, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Import cumulative Steam playtime without synthesizing historical activity."""
+    csv_text = payload.get("csv_text")
+    if not isinstance(csv_text, str) or not csv_text.strip():
+        raise HTTPException(status_code=422, detail="Bitte eine CSV-Datei auswählen.")
+    if len(csv_text.encode("utf-8")) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Die CSV-Datei darf maximal 10 MB groß sein.")
+    try:
+        reader = csv.DictReader(io.StringIO(csv_text.lstrip("\ufeff")))
+        if not reader.fieldnames:
+            raise ValueError("Die CSV-Datei enthält keine Spaltenüberschriften.")
+        columns = {str(name).strip().lower(): name for name in reader.fieldnames if name}
+        title_col = next((columns[k] for k in ("game", "name", "title") if k in columns), None)
+        appid_col = next((columns[k] for k in ("id", "appid", "app_id", "steam_appid") if k in columns), None)
+        hours_col = next((columns[k] for k in ("hours", "playtime_hours", "hours_on_record") if k in columns), None)
+        last_col = next((columns[k] for k in ("last_played", "last_played_at", "rtime_last_played") if k in columns), None)
+        release_col = columns.get("release_date")
+        if not title_col or not appid_col:
+            raise ValueError("Erwartete Spalten fehlen: game und id (oder name und appid).")
+        imported = updated = skipped = 0
+        for row in reader:
+            title, appid = str(row.get(title_col) or "").strip(), str(row.get(appid_col) or "").strip()
+            if not title or not appid.isdigit():
+                skipped += 1
+                continue
+            hours_raw = str(row.get(hours_col) or "").strip() if hours_col else ""
+            minutes = None
+            if hours_raw:
+                try:
+                    hours = float(hours_raw.replace(",", "."))
+                    if not 0 <= hours <= 10000000: raise ValueError
+                    minutes = int(round(hours * 60))
+                except ValueError as exc:
+                    raise ValueError(f"Ungültiger Stundenwert für {title}: {hours_raw}") from exc
+            last_played = None
+            raw_last = str(row.get(last_col) or "").strip() if last_col else ""
+            if raw_last and raw_last.lower() not in ("nan", "none", "null", "0"):
+                try:
+                    last_played = datetime.fromtimestamp(float(raw_last), tz=timezone.utc).replace(tzinfo=None)
+                except ValueError:
+                    last_played = datetime.fromisoformat(raw_last.replace("Z", "+00:00"))
+                    if last_played.tzinfo is not None:
+                        last_played = last_played.astimezone(timezone.utc).replace(tzinfo=None)
+            p_result = await db.execute(select(GamePlatform).options(selectinload(GamePlatform.game)).where(
+                GamePlatform.platform == "steam", GamePlatform.external_id == appid))
+            p_row = p_result.scalar_one_or_none()
+            if p_row:
+                game = p_row.game
+                updated += 1
+            else:
+                g_result = await db.execute(select(Game).where(Game.title.ilike(title)).order_by(Game.id.asc()))
+                game = g_result.scalars().first()
+                if game is None:
+                    game = Game(title=title)
+                    db.add(game)
+                    await db.flush()
+                db.add(GamePlatform(game_id=game.id, platform="steam", external_id=appid,
+                    platform_name="Steam", external_url=f"https://store.steampowered.com/app/{appid}/",
+                    metadata_json={"source": "steam_csv"}))
+            if not game.cover_path:
+                game.cover_path = f"https://cdn.akamai.steamstatic.com/steam/apps/{appid}/library_600x900_2x.jpg"
+            st_result = await db.execute(select(GameUserStats).where(
+                GameUserStats.user_id == current_user.id, GameUserStats.game_id == game.id,
+                GameUserStats.platform == "steam"))
+            stats = st_result.scalar_one_or_none()
+            if stats is None:
+                stats = GameUserStats(user_id=current_user.id, game_id=game.id, platform="steam")
+                db.add(stats)
+            if minutes is not None:
+                stats.playtime_minutes = minutes
+                # The CSV total is authoritative. Neutralize already-accounted
+                # Steam sync deltas to avoid adding them on top of this baseline.
+                acts = await db.execute(select(GamePlayActivity).where(
+                    GamePlayActivity.user_id == current_user.id, GamePlayActivity.game_id == game.id,
+                    GamePlayActivity.platform == "steam", GamePlayActivity.source == "steam"))
+                for activity in acts.scalars().all():
+                    if activity.playtime_before_minutes is not None and activity.playtime_after_minutes is not None:
+                        activity.duration_minutes = max(0, activity.playtime_after_minutes - activity.playtime_before_minutes)
+            if last_played is not None: stats.last_played_at = last_played
+            if release_col:
+                release = str(row.get(release_col) or "").strip()
+                if release:
+                    try: game.release_date = date.fromisoformat(release[:10])
+                    except ValueError: pass
+            imported += 1
+        await db.commit()
+        return {"status":"imported","games_imported":imported,"games_updated":updated,"rows_skipped":skipped}
+    except (csv.Error, ValueError) as exc:
+        await db.rollback()
+        raise HTTPException(status_code=422, detail=f"CSV-Import fehlgeschlagen: {exc}") from exc
 
 
 @router.post("/sync")
