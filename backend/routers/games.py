@@ -79,6 +79,7 @@ async def list_games(
         select(Game).options(selectinload(Game.platforms), selectinload(Game.user_stats)).order_by(Game.title.asc())
     )
     games = result.scalars().unique().all()
+    games = [game for game in games if not any(s.user_id == current_user.id and (s.metadata_json or {}).get("hidden_from_library") for s in game.user_stats)]
     activity_result = await db.execute(select(GamePlayActivity).where(GamePlayActivity.user_id == current_user.id))
     adjustments = _activity_adjustments(activity_result.scalars().all())
     return {"results": [_game(game, current_user.id, adjustments) for game in games]}
