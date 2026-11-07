@@ -124,18 +124,32 @@ const latestPlayed = stats
             <h1 class="text-4xl md:text-6xl font-black tracking-tight text-white mt-2">{game.title}</h1>
             {game.original_title && game.original_title !== game.title && <p class="text-zinc-500 mt-2">{game.original_title}</p>}
 
-            <details class="mt-5 max-w-xl rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
-              <summary class="cursor-pointer text-sm font-bold text-zinc-300 hover:text-white">Mit anderem Spiel verbinden</summary>
-              <p class="mt-2 text-xs leading-5 text-zinc-500">Plattformen, Statistiken und Spielverlauf des ausgewählten Eintrags werden übernommen. Der andere Eintrag wird entfernt. Die Zusammenführung betrifft den gemeinsamen Spiele-Katalog und damit alle Benutzer.</p>
+            <div class="flex flex-wrap items-center gap-2 mt-5" aria-label="Spiel verwalten">
+              <button id="hide-game-button" type="button" class="inline-flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 px-4 py-2.5 text-sm font-bold text-amber-200 transition disabled:opacity-50">
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 5.2A11.2 11.2 0 0 1 12 5c5 0 8.5 4.5 9.5 7-.4 1-1.2 2.1-2.3 3.2"/><path d="M6.2 6.2C3.8 7.8 2.7 10 2.5 12c.8 2 4.3 7 9.5 7 1.2 0 2.3-.2 3.3-.7"/></svg>
+                Verstecken
+              </button>
+              <button id="toggle-merge-panel" type="button" aria-expanded="false" aria-controls="merge-game-panel" class="inline-flex items-center gap-2 rounded-xl border border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20 px-4 py-2.5 text-sm font-bold text-sky-200 transition">
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1 0l-2 2A5 5 0 0 0 12 20.1l1.1-1.1"/></svg>
+                Verbinden
+              </button>
+              <button id="delete-game-button" type="button" class="inline-flex items-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 px-4 py-2.5 text-sm font-bold text-rose-200 transition disabled:opacity-50">
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/></svg>
+                Löschen
+              </button>
+            </div>
+            <div id="merge-game-panel" class="hidden mt-3 max-w-2xl rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+              <p class="text-xs leading-5 text-zinc-500">Plattformen, Statistiken und Spielverlauf des ausgewählten Eintrags werden übernommen. Der andere Eintrag wird entfernt. Die Zusammenführung betrifft den gemeinsamen Spiele-Katalog und damit alle Benutzer.</p>
               <div class="mt-3 flex flex-col sm:flex-row gap-2">
                 <select id="merge-game-source" class="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-sm text-white">
                   <option value="">Spiel zum Verbinden auswählen …</option>
                   {mergeCandidates.map((item: any) => <option value={item.id}>{item.title} · #{item.id}</option>)}
                 </select>
-                <button id="merge-game-submit" type="button" class="rounded-lg bg-sky-600 hover:bg-sky-500 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50">Verbinden</button>
+                <button id="merge-game-submit" type="button" class="rounded-lg bg-sky-600 hover:bg-sky-500 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50">Zusammenführen</button>
               </div>
               <p id="merge-game-message" class="mt-2 text-xs text-zinc-500" role="status" aria-live="polite"></p>
-            </details>
+            </div>
+            <p id="game-action-message" class="mt-2 text-xs text-zinc-500" role="status" aria-live="polite"></p>
 
             <div class="flex flex-wrap gap-2 mt-5">
               {game.release_date && <span class="px-3 py-1.5 rounded-full bg-zinc-900/80 border border-zinc-800 text-xs font-bold text-zinc-300">{game.release_date.slice(0, 4)}</span>}
@@ -350,6 +364,50 @@ const latestPlayed = stats
 
 <script>
   const mergeGameId = document.getElementById("merge-game-config")?.getAttribute("data-game-id");
+  const actionMessage = document.getElementById("game-action-message");
+  const hideGameButton = document.getElementById("hide-game-button");
+  const deleteGameButton = document.getElementById("delete-game-button");
+  const toggleMergePanel = document.getElementById("toggle-merge-panel");
+  const mergePanel = document.getElementById("merge-game-panel");
+
+  toggleMergePanel?.addEventListener("click", () => {
+    const expanded = toggleMergePanel.getAttribute("aria-expanded") === "true";
+    toggleMergePanel.setAttribute("aria-expanded", String(!expanded));
+    mergePanel?.classList.toggle("hidden", expanded);
+  });
+
+  hideGameButton?.addEventListener("click", async () => {
+    if (!mergeGameId || !confirm("Dieses Spiel aus deiner Spieleübersicht verstecken? Statistiken und Spielverlauf bleiben erhalten.")) return;
+    hideGameButton.disabled = true;
+    if (actionMessage) actionMessage.textContent = "Spiel wird versteckt …";
+    try {
+      const response = await fetch("/api/proxy/games/" + encodeURIComponent(mergeGameId) + "/visibility", {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hidden: true })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "Spiel konnte nicht versteckt werden.");
+      window.location.href = "/games";
+    } catch (error) {
+      if (actionMessage) actionMessage.textContent = error instanceof Error ? error.message : "Verstecken fehlgeschlagen.";
+      hideGameButton.disabled = false;
+    }
+  });
+
+  deleteGameButton?.addEventListener("click", async () => {
+    if (!mergeGameId || !confirm("Spiel einschließlich deiner Statistiken und deines Spielverlaufs endgültig löschen? Diese Aktion kann nicht rückgängig gemacht werden.")) return;
+    deleteGameButton.disabled = true;
+    if (actionMessage) actionMessage.textContent = "Spiel wird gelöscht …";
+    try {
+      const response = await fetch("/api/proxy/games/" + encodeURIComponent(mergeGameId), { method: "DELETE" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "Spiel konnte nicht gelöscht werden.");
+      window.location.href = "/games";
+    } catch (error) {
+      if (actionMessage) actionMessage.textContent = error instanceof Error ? error.message : "Löschen fehlgeschlagen.";
+      deleteGameButton.disabled = false;
+    }
+  });
+
   const mergeButton = document.getElementById("merge-game-submit");
   const mergeSelect = document.getElementById("merge-game-source");
   const mergeMessage = document.getElementById("merge-game-message");
