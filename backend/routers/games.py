@@ -79,6 +79,7 @@ async def list_games(
         select(Game).options(selectinload(Game.platforms), selectinload(Game.user_stats)).order_by(Game.title.asc())
     )
     games = result.scalars().unique().all()
+    games = [game for game in games if not any(s.user_id == current_user.id and (s.metadata_json or {}).get("hidden_from_library") for s in game.user_stats)]
     activity_result = await db.execute(select(GamePlayActivity).where(GamePlayActivity.user_id == current_user.id))
     adjustments = _activity_adjustments(activity_result.scalars().all())
     return {"results": [_game(game, current_user.id, adjustments) for game in games]}
@@ -276,6 +277,39 @@ async def delete_game_library(
         await db.delete(game)
     await db.commit()
     return {"deleted_stats": deleted_stats.rowcount or 0, "deleted_games": len(orphaned_games)}
+
+
+@router.patch("/{game_id}/visibility")
+async def update_game_visibility(game_id: int, payload: dict = Body(...), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user_or_api_key)):
+    game = await db.get(Game, game_id)
+    if game is None: raise HTTPException(status_code=404, detail="Spiel nicht gefunden")
+    hidden = payload.get("hidden")
+    if not isinstance(hidden, bool): raise HTTPException(status_code=422, detail="hidden muss true oder false sein.")
+    result = await db.execute(select(GameUserStats).where(GameUserStats.user_id == current_user.id, GameUserStats.game_id == game_id))
+    stats = result.scalars().first()
+    if stats is None:
+        stats = GameUserStats(user_id=current_user.id, game_id=game_id, platform="library", play_count=0, playtime_minutes=0, metadata_json={})
+        db.add(stats)
+    metadata = dict(stats.metadata_json or {})
+    if hidden: metadata["hidden_from_library"] = True
+    else: metadata.pop("hidden_from_library", None)
+    stats.metadata_json = metadata
+    await db.commit()
+    return {"id": game_id, "hidden": hidden}
+
+
+@router.delete("/{game_id}")
+async def delete_user_game(game_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user_or_api_key)):
+    game = await db.get(Game, game_id)
+    if game is None: raise HTTPException(status_code=404, detail="Spiel nicht gefunden")
+    await db.execute(delete(GameUserStats).where(GameUserStats.user_id == current_user.id, GameUserStats.game_id == game_id))
+    await db.execute(delete(GamePlayActivity).where(GamePlayActivity.user_id == current_user.id, GamePlayActivity.game_id == game_id))
+    await db.flush()
+    remaining_stats = await db.execute(select(GameUserStats.id).where(GameUserStats.game_id == game_id).limit(1))
+    remaining_activity = await db.execute(select(GamePlayActivity.id).where(GamePlayActivity.game_id == game_id).limit(1))
+    if remaining_stats.scalar_one_or_none() is None and remaining_activity.scalar_one_or_none() is None: await db.delete(game)
+    await db.commit()
+    return {"deleted": True, "game_id": game_id}
 
 
 @router.post("/{game_id}/activity")
