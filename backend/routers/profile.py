@@ -1568,7 +1568,7 @@ async def get_user_stats(
             "id": row.id, "title": row.title, "cover_path": row.cover_path,
             "playtime_minutes": 0, "play_count": 0, "platforms": set(),
             "first_played_at": None, "last_played_at": None,
-            "trophies_earned": 0, "trophies_defined": 0, "platform_play_counts": {}, "platform_playtime_minutes": {},
+            "trophies_earned": 0, "trophies_defined": 0, "platform_achievements": {}, "platform_play_counts": {}, "platform_playtime_minutes": {},
         })
         minutes = max(int(row.playtime_minutes or 0), 0)
         plays = max(int(row.play_count or 0), 0)
@@ -1588,8 +1588,13 @@ async def get_user_stats(
             earned = sum(_achievement_count(row.trophies_earned, k) for k in ("bronze", "silver", "gold", "platinum"))
         if isinstance(row.trophies_defined, dict) and not defined:
             defined = sum(_achievement_count(row.trophies_defined, k) for k in ("bronze", "silver", "gold", "platinum"))
-        game["trophies_earned"] += earned
-        game["trophies_defined"] += defined
+        platform_achievements = game["platform_achievements"].setdefault(
+            normalized_platform, {"earned": 0, "defined": 0}
+        )
+        # Steam and manually tracked PC rows describe the same achievement
+        # set. Keep the greatest reported totals instead of adding duplicates.
+        platform_achievements["earned"] = max(platform_achievements["earned"], earned)
+        platform_achievements["defined"] = max(platform_achievements["defined"], defined)
 
         platform = game_platforms[normalized_platform]
         platform["games"].add(row.id)
@@ -1597,12 +1602,16 @@ async def get_user_stats(
         platform["play_count"] += plays
         total_game_playtime += minutes
         total_game_plays += plays
-        total_game_achievements += earned
-        total_game_achievements_defined += defined
         if row.first_played_at and (game_first_played is None or row.first_played_at < game_first_played):
             game_first_played = row.first_played_at
         if row.last_played_at and (game_last_played is None or row.last_played_at > game_last_played):
             game_last_played = row.last_played_at
+
+    for game in game_by_id.values():
+        game["trophies_earned"] = sum(item["earned"] for item in game["platform_achievements"].values())
+        game["trophies_defined"] = sum(item["defined"] for item in game["platform_achievements"].values())
+    total_game_achievements = sum(game["trophies_earned"] for game in game_by_id.values())
+    total_game_achievements_defined = sum(game["trophies_defined"] for game in game_by_id.values())
 
     top_games = []
     for game in game_by_id.values():
@@ -1657,7 +1666,7 @@ async def get_user_stats(
                     "playtime_minutes": 0, "play_count": 0, "platforms": set(),
                     "first_played_at": None, "last_played_at": None,
                     "trophies_earned": 0, "trophies_defined": 0, "platform_play_counts": {},
-                    "platform_playtime_minutes": {},
+                    "platform_playtime_minutes": {}, "platform_achievements": {},
                 }
                 game_by_id[game_id] = game
             delta = int(adjustment["playtime_delta"])
@@ -1691,7 +1700,8 @@ async def get_user_stats(
             "game_id": row.game_id,
             "title": row.title,
             "cover_path": row.cover_path,
-            "platform": normalize_game_platform(row.platform),
+            "platform": row.platform,
+            "source": row.source,
             "played_at": row.played_at.isoformat() if row.played_at else None,
             "duration_minutes": row.duration_minutes,
             "observed_at": row.observed_at.isoformat() if row.observed_at else None,
