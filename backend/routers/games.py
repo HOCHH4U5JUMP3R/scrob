@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 from db import get_db
 from dependencies import get_current_user_or_api_key
 from models.game_play_activity import GamePlayActivity
-from models.games import Game, GameUserStats
+from models.games import Game, GamePlatform, GameUserStats
 from models.users import User
 from core.game_platforms import normalize_game_platform
 from core.game_activity import build_activity_adjustments
@@ -277,6 +277,66 @@ async def delete_game_library(
     await db.commit()
     return {"deleted_stats": deleted_stats.rowcount or 0, "deleted_games": len(orphaned_games)}
 
+
+@router.post("/{game_id}/merge")
+async def merge_games(game_id: int, payload: dict = Body(...), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user_or_api_key)):
+    """Merge another game catalog entry into this canonical game."""
+    try:
+        source_id = int(payload.get("source_game_id"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Bitte ein gültiges Spiel zum Verbinden auswählen.")
+    if source_id == game_id:
+        raise HTTPException(status_code=422, detail="Ein Spiel kann nicht mit sich selbst verbunden werden.")
+    target = await db.get(Game, game_id)
+    source = await db.get(Game, source_id)
+    if target is None or source is None:
+        raise HTTPException(status_code=404, detail="Eines der Spiele wurde nicht gefunden.")
+    for field in ("original_title", "slug", "overview", "cover_path", "backdrop_path", "release_date", "genres"):
+        if getattr(target, field) is None and getattr(source, field) is not None:
+            setattr(target, field, getattr(source, field))
+    target_platforms = await db.execute(select(GamePlatform).where(GamePlatform.game_id == game_id))
+    known_platforms = {(item.platform, item.external_id) for item in target_platforms.scalars().all()}
+    source_platforms = await db.execute(select(GamePlatform).where(GamePlatform.game_id == source_id))
+    for item in source_platforms.scalars().all():
+        identity = (item.platform, item.external_id)
+        if identity in known_platforms:
+            await db.delete(item)
+        else:
+            item.game_id = game_id
+            known_platforms.add(identity)
+    target_stats_result = await db.execute(select(GameUserStats).where(GameUserStats.game_id == game_id))
+    target_stats = {(item.user_id, item.platform): item for item in target_stats_result.scalars().all()}
+    source_stats_result = await db.execute(select(GameUserStats).where(GameUserStats.game_id == source_id))
+    for item in source_stats_result.scalars().all():
+        existing = target_stats.get((item.user_id, item.platform))
+        if existing is None:
+            item.game_id = game_id
+            target_stats[(item.user_id, item.platform)] = item
+            continue
+        existing.play_count = int(existing.play_count or 0) + int(item.play_count or 0)
+        existing.playtime_minutes = int(existing.playtime_minutes or 0) + int(item.playtime_minutes or 0)
+        dates = [value for value in (existing.first_played_at, item.first_played_at) if value]
+        existing.first_played_at = min(dates) if dates else None
+        dates = [value for value in (existing.last_played_at, item.last_played_at) if value]
+        existing.last_played_at = max(dates) if dates else None
+        earned, defined = dict(existing.trophies_earned or {}), dict(existing.trophies_defined or {})
+        for key, value in (item.trophies_earned or {}).items():
+            earned[key] = max(int(earned.get(key, 0) or 0), int(value or 0))
+        for key, value in (item.trophies_defined or {}).items():
+            defined[key] = max(int(defined.get(key, 0) or 0), int(value or 0))
+        existing.trophies_earned, existing.trophies_defined = earned or None, defined or None
+        if defined:
+            earned_total = sum(int(value or 0) for value in earned.values())
+            defined_total = sum(int(value or 0) for value in defined.values())
+            existing.trophy_progress = round(earned_total / defined_total * 100) if defined_total else 0
+        merged_metadata = dict(item.metadata_json or {})
+        merged_metadata.update(existing.metadata_json or {})
+        existing.metadata_json = merged_metadata
+        await db.delete(item)
+    await db.execute(GamePlayActivity.__table__.update().where(GamePlayActivity.game_id == source_id).values(game_id=game_id))
+    await db.delete(source)
+    await db.commit()
+    return {"merged_game_id": source_id, "into_game_id": game_id, "title": target.title}
 
 @router.post("/{game_id}/activity")
 async def create_game_activity(
