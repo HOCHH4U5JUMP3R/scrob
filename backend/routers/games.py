@@ -22,29 +22,55 @@ router = APIRouter()
 
 
 def _game(game: Game, current_user_id: int, activity_adjustments: dict | None = None) -> dict:
+    """Serialize one row per logical platform, applying activity deltas once."""
     adjustments = activity_adjustments or {}
-    stats = []
-    seen_platforms = set()
-    for s in game.user_stats:
-        if s.user_id != current_user_id:
+    grouped: dict[str, dict] = {}
+    for stats_row in game.user_stats:
+        if stats_row.user_id != current_user_id:
             continue
-        key = normalize_game_platform(s.platform)
-        adjustment = adjustments.get((game.id, key), {})
-        seen_platforms.add(key)
-        first_dates = [value for value in (s.first_played_at, adjustment.get("first_played_at")) if value]
-        latest_activity = adjustment.get("last_played_at")
+        platform = normalize_game_platform(stats_row.platform)
+        entry = grouped.setdefault(platform, {
+            "play_count": 0, "playtime_minutes": 0, "first_played_at": None,
+            "last_played_at": None, "trophies_earned": {}, "trophies_defined": {},
+            "trophy_progress": None,
+        })
+        entry["play_count"] += max(0, int(stats_row.play_count or 0))
+        entry["playtime_minutes"] += max(0, int(stats_row.playtime_minutes or 0))
+        for field in ("first_played_at", "last_played_at"):
+            value = getattr(stats_row, field)
+            if value and (entry[field] is None or (value < entry[field] if field == "first_played_at" else value > entry[field])):
+                entry[field] = value
+        # Multiple provider/store records for one logical platform are not
+        # independent achievement sets. Keep the greatest known count per key.
+        for field in ("trophies_earned", "trophies_defined"):
+            values = getattr(stats_row, field) or {}
+            if isinstance(values, dict):
+                for key, value in values.items():
+                    try:
+                        count = max(0, int(value or 0))
+                    except (TypeError, ValueError):
+                        continue
+                    entry[field][key] = max(entry[field].get(key, 0), count)
+        if stats_row.trophy_progress is not None:
+            entry["trophy_progress"] = max(entry["trophy_progress"] or 0, int(stats_row.trophy_progress or 0))
+
+    stats = []
+    for platform, entry in grouped.items():
+        adjustment = adjustments.get((game.id, platform), {})
+        first_dates = [value for value in (entry["first_played_at"], adjustment.get("first_played_at")) if value]
+        latest = adjustment.get("last_played_at") or entry["last_played_at"]
         stats.append({
-            "platform": s.platform,
-            "play_count": max(0, int(s.play_count or 0) + int(adjustment.get("manual_activity_count", 0))),
-            "playtime_minutes": max(0, int(s.playtime_minutes or 0) + int(adjustment.get("playtime_delta", 0))),
+            "platform": platform,
+            "play_count": max(0, entry["play_count"] + int(adjustment.get("manual_activity_count", 0))),
+            "playtime_minutes": max(0, entry["playtime_minutes"] + int(adjustment.get("playtime_delta", 0))),
             "first_played_at": min(first_dates).isoformat() if first_dates else None,
-            "last_played_at": latest_activity.isoformat() if latest_activity else (s.last_played_at.isoformat() if s.last_played_at else None),
-            "trophy_progress": s.trophy_progress,
-            "trophies_earned": s.trophies_earned,
-            "trophies_defined": s.trophies_defined,
+            "last_played_at": latest.isoformat() if latest else None,
+            "trophy_progress": entry["trophy_progress"],
+            "trophies_earned": entry["trophies_earned"] or None,
+            "trophies_defined": entry["trophies_defined"] or None,
         })
     for (game_id, platform), adjustment in adjustments.items():
-        if game_id != game.id or platform in seen_platforms or not adjustment.get("manual_activity_count"):
+        if game_id != game.id or platform in grouped or not adjustment.get("manual_activity_count"):
             continue
         stats.append({
             "platform": platform,
@@ -64,7 +90,6 @@ def _game(game: Game, current_user_id: int, activity_adjustments: dict | None = 
                        "platform_name": p.platform_name, "external_url": p.external_url} for p in game.platforms],
         "stats": stats,
     }
-
 
 def _activity_adjustments(activities) -> dict:
     return build_activity_adjustments(activities)
